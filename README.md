@@ -144,7 +144,7 @@ por produto e por campanha (UTM). Calculado pela função SQL `admin_dashboard` 
    - `CRON_SECRET` novo (`openssl rand -hex 32`);
    - provedores de mensagens (`SMS_PROVIDER`, `WHATSAPP_PROVIDER`, `EMAIL_PROVIDER` e credenciais). Não usar `log` em produção.
 3. **Região:** Frankfurt, a mais próxima do Supabase (`eu-central-1`, Frankfurt).
-4. **Cron:** o serviço `kiandapay-cron` do `render.yaml` chama `/api/cron` a cada 5 minutos (`scripts/cron.mjs`),
+4. **Cron:** no plano grátis do Render não há cron. Chame `/api/cron` a cada 5 minutos com um serviço externo, usando o `CRON_SECRET` do serviço web (`scripts/cron.mjs` mostra como).
    com o mesmo `CRON_SECRET` do serviço web (partilhado pelo Render, nunca no Git).
 5. **Domínio:** em Settings → Custom Domains do serviço `kiandapay` (e atualizar `NEXT_PUBLIC_SITE_URL` e `CRON_URL`). Os anúncios apontam para `https://o-seu-dominio/<slug-do-produto>`.
 
