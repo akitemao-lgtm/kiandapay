@@ -6,13 +6,12 @@ import {
 } from "@/app/admin/(painel)/integracoes/actions";
 import { buttonPrimary, buttonSecondary, cardClass, errorClass, hintClass, inputClass, labelClass } from "@/components/ui/styles";
 import { safeAction } from "@/lib/client/safe-action";
-import { rateError } from "@/lib/currency/rate";
+import { kzTextFromRate, rateError, rateFromKzText } from "@/lib/currency/rate";
 import { formatKz } from "@/lib/format";
 import type { ActionResult } from "@/lib/products/types";
 import { UTMIFY_CURRENCIES } from "@/lib/utmify/payload";
 
 const META_CURRENCIES = ["AOA", "USD", "EUR", "BRL", "ZAR"];
-const parseRate = (s: string) => (s ? Number(s.replace(",", ".")) : null);
 const SAMPLE_KZ = 10_000;
 
 /** Mostra o resultado da taxa, para se ver logo se está certa. */
@@ -41,14 +40,14 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
     ...initial,
     metaToken: "",
     utmifyToken: "",
-    metaRateText: initial.metaRate ? String(initial.metaRate) : "",
-    utmifyRateText: initial.utmifyRate ? String(initial.utmifyRate) : "",
+    metaRateText: kzTextFromRate(initial.metaRate),
+    utmifyRateText: kzTextFromRate(initial.utmifyRate),
   });
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, start] = useTransition();
   const errors = result && !result.ok ? (result.fieldErrors ?? {}) : {};
-  const metaRate = parseRate(v.metaRateText);
-  const utmifyRate = parseRate(v.utmifyRateText);
+  const metaRate = rateFromKzText(v.metaRateText);
+  const utmifyRate = rateFromKzText(v.utmifyRateText);
   const metaRateError = rateError(v.metaCurrency, metaRate) ?? errors.metaRate;
   const utmifyRateError = rateError(v.utmifyCurrency, utmifyRate) ?? errors.utmifyRate;
 
@@ -121,8 +120,8 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
           </div>
           {v.metaCurrency !== "AOA" && (
             <div>
-              <label className={labelClass} htmlFor="meta-rate">1 AOA = ? {v.metaCurrency}</label>
-              <input id="meta-rate" inputMode="decimal" value={v.metaRateText} onChange={(e) => setV({ ...v, metaRateText: e.target.value })} className={`${inputClass} w-40 font-mono`} />
+              <label className={labelClass} htmlFor="meta-rate">1 {v.metaCurrency} = ? Kz</label>
+              <input id="meta-rate" inputMode="decimal" value={v.metaRateText} onChange={(e) => setV({ ...v, metaRateText: e.target.value })} placeholder="1200" className={`${inputClass} w-40 font-mono`} />
               {metaRateError && <p className={errorClass}>{metaRateError}</p>}
             </div>
           )}
@@ -164,8 +163,8 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
               </select>
             </div>
             <div>
-              <label className={labelClass} htmlFor="utmify-rate">1 AOA = ? {v.utmifyCurrency}</label>
-              <input id="utmify-rate" inputMode="decimal" value={v.utmifyRateText} onChange={(e) => setV({ ...v, utmifyRateText: e.target.value })} className={`${inputClass} w-40 font-mono`} />
+              <label className={labelClass} htmlFor="utmify-rate">1 {v.utmifyCurrency} = ? Kz</label>
+              <input id="utmify-rate" inputMode="decimal" value={v.utmifyRateText} onChange={(e) => setV({ ...v, utmifyRateText: e.target.value })} placeholder="1200" className={`${inputClass} w-40 font-mono`} />
               {utmifyRateError && <p className={errorClass}>{utmifyRateError}</p>}
             </div>
           </div>

@@ -4,7 +4,7 @@ import { safeAction } from "@/lib/client/safe-action";
 import { useState, useTransition } from "react";
 import { removeMetaToken, saveMetaSettings, sendTestEvent } from "@/app/admin/(painel)/produtos/[id]/meta/actions";
 import { buttonPrimary, buttonSecondary, cardClass, errorClass, hintClass, inputClass, labelClass } from "@/components/ui/styles";
-import { rateError } from "@/lib/currency/rate";
+import { kzTextFromRate, rateError, rateFromKzText } from "@/lib/currency/rate";
 import { formatKz } from "@/lib/format";
 import type { ActionResult } from "@/lib/products/types";
 
@@ -18,11 +18,11 @@ type Props = {
 };
 
 export function MetaForm({ productId, price, initial, tokenHint }: Props) {
-  const [v, setV] = useState({ ...initial, token: "", rateText: initial.rate ? String(initial.rate) : "" });
+  const [v, setV] = useState({ ...initial, token: "", rateText: kzTextFromRate(initial.rate) });
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, start] = useTransition();
   const errors = result && !result.ok ? (result.fieldErrors ?? {}) : {};
-  const rate = v.rateText ? Number(v.rateText.replace(",", ".")) : null;
+  const rate = rateFromKzText(v.rateText);
 
   const run = (fn: () => Promise<ActionResult>) => {
     setResult(null);
@@ -96,8 +96,8 @@ export function MetaForm({ productId, price, initial, tokenHint }: Props) {
           </div>
           {v.currency !== "AOA" && (
             <div>
-              <label className={labelClass} htmlFor="rate">1 AOA = ? {v.currency}</label>
-              <input id="rate" inputMode="decimal" value={v.rateText} onChange={(e) => setV({ ...v, rateText: e.target.value })} placeholder="0.0011" className={`${inputClass} w-40 font-mono`} />
+              <label className={labelClass} htmlFor="rate">1 {v.currency} = ? Kz</label>
+              <input id="rate" inputMode="decimal" value={v.rateText} onChange={(e) => setV({ ...v, rateText: e.target.value })} placeholder="1200" className={`${inputClass} w-40 font-mono`} />
               {(rateError(v.currency, rate) ?? errors.rate) && <p className={errorClass}>{rateError(v.currency, rate) ?? errors.rate}</p>}
             </div>
           )}
