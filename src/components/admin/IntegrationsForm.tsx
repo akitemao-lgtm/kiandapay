@@ -6,11 +6,24 @@ import {
 } from "@/app/admin/(painel)/integracoes/actions";
 import { buttonPrimary, buttonSecondary, cardClass, errorClass, hintClass, inputClass, labelClass } from "@/components/ui/styles";
 import { safeAction } from "@/lib/client/safe-action";
+import { rateError } from "@/lib/currency/rate";
+import { formatKz } from "@/lib/format";
 import type { ActionResult } from "@/lib/products/types";
 import { UTMIFY_CURRENCIES } from "@/lib/utmify/payload";
 
 const META_CURRENCIES = ["AOA", "USD", "EUR", "BRL", "ZAR"];
 const parseRate = (s: string) => (s ? Number(s.replace(",", ".")) : null);
+const SAMPLE_KZ = 10_000;
+
+/** Mostra o resultado da taxa, para se ver logo se está certa. */
+function RatePreview({ currency, rate }: { currency: string; rate: number | null }) {
+  return (
+    <p className="text-sm text-gray-600">
+      Uma venda de {formatKz(SAMPLE_KZ)} é enviada como{" "}
+      <strong>{currency === "AOA" ? `${SAMPLE_KZ.toFixed(2)} AOA` : rate ? `${(SAMPLE_KZ * rate).toFixed(2)} ${currency}` : "—"}</strong>.
+    </p>
+  );
+}
 
 type Props = {
   metaTokenHint: string | null;
@@ -34,6 +47,10 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, start] = useTransition();
   const errors = result && !result.ok ? (result.fieldErrors ?? {}) : {};
+  const metaRate = parseRate(v.metaRateText);
+  const utmifyRate = parseRate(v.utmifyRateText);
+  const metaRateError = rateError(v.metaCurrency, metaRate) ?? errors.metaRate;
+  const utmifyRateError = rateError(v.utmifyCurrency, utmifyRate) ?? errors.utmifyRate;
 
   const run = (fn: () => Promise<ActionResult>) => {
     setResult(null);
@@ -50,9 +67,9 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
         e.preventDefault();
         run(() => saveIntegrations({
           metaEnabled: v.metaEnabled, pixelId: v.pixelId, metaToken: v.metaToken, testEventCode: v.testEventCode,
-          metaCurrency: v.metaCurrency, metaRate: parseRate(v.metaRateText),
+          metaCurrency: v.metaCurrency, metaRate,
           utmifyEnabled: v.utmifyEnabled, utmifyToken: v.utmifyToken,
-          utmifyCurrency: v.utmifyCurrency as IntegrationsInput["utmifyCurrency"], utmifyRate: parseRate(v.utmifyRateText),
+          utmifyCurrency: v.utmifyCurrency as IntegrationsInput["utmifyCurrency"], utmifyRate,
         }));
       }}
       className="space-y-6 pb-8"
@@ -106,10 +123,11 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
             <div>
               <label className={labelClass} htmlFor="meta-rate">1 AOA = ? {v.metaCurrency}</label>
               <input id="meta-rate" inputMode="decimal" value={v.metaRateText} onChange={(e) => setV({ ...v, metaRateText: e.target.value })} className={`${inputClass} w-40 font-mono`} />
-              {errors.metaRate && <p className={errorClass}>{errors.metaRate}</p>}
+              {metaRateError && <p className={errorClass}>{metaRateError}</p>}
             </div>
           )}
         </div>
+        <RatePreview currency={v.metaCurrency} rate={metaRate} />
         <button type="button" disabled={pending} onClick={() => run(testMeta)} className={buttonSecondary}>Enviar evento de teste</button>
       </section>
 
@@ -148,9 +166,10 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
             <div>
               <label className={labelClass} htmlFor="utmify-rate">1 AOA = ? {v.utmifyCurrency}</label>
               <input id="utmify-rate" inputMode="decimal" value={v.utmifyRateText} onChange={(e) => setV({ ...v, utmifyRateText: e.target.value })} className={`${inputClass} w-40 font-mono`} />
-              {errors.utmifyRate && <p className={errorClass}>{errors.utmifyRate}</p>}
+              {utmifyRateError && <p className={errorClass}>{utmifyRateError}</p>}
             </div>
           </div>
+          <div className="mt-2"><RatePreview currency={v.utmifyCurrency} rate={utmifyRate} /></div>
         </div>
         {lastUtmifyError && <p className={errorClass}>Último erro de envio: {lastUtmifyError}</p>}
         <button type="button" disabled={pending} onClick={() => run(testUtmify)} className={buttonSecondary}>Validar formato</button>

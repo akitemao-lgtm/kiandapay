@@ -1,5 +1,6 @@
 import "server-only";
 import { decryptSecret } from "@/lib/crypto";
+import { rateError } from "@/lib/currency/rate";
 import type { ServiceDb } from "@/lib/supabase/service";
 import { buildUtmifyPayload, UTMIFY_MAX_AGE_DAYS, UTMIFY_URL, utmifyStatus, type UtmifyOrder } from "./payload";
 
@@ -39,6 +40,10 @@ export async function syncUtmifyOrders(db: ServiceDb): Promise<number> {
   const since = new Date(Date.now() - UTMIFY_MAX_AGE_DAYS * 86_400_000).toISOString();
 
   for (const account of accounts ?? []) {
+    if (rateError(account.utmify_currency, Number(account.utmify_conversion_rate))) {
+      console.error("[utmify] taxa de conversão inválida", account.owner_id);
+      continue;
+    }
     const { data: secret } = await db
       .from("account_integration_secrets")
       .select("utmify_token_encrypted")

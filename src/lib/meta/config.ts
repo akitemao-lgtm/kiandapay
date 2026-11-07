@@ -1,5 +1,6 @@
 import "server-only";
 import { decryptSecret } from "@/lib/crypto";
+import { rateError } from "@/lib/currency/rate";
 import type { ServiceDb } from "@/lib/supabase/service";
 
 export const GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v27.0";
@@ -55,6 +56,16 @@ async function ownEncryptedToken(db: ServiceDb, productId: string) {
  * o Meta deduplicar, por isso passam ambos para o da conta, se estiver ativo.
  */
 async function resolve(db: ServiceDb, productId: string): Promise<Resolved | null> {
+  const cfg = await resolveSource(db, productId);
+  // Uma taxa ao contrário envia valores milhares de vezes maiores. Sem evento, o cron repete o Purchase quando for corrigida.
+  if (cfg && rateError(cfg.currency, cfg.rate)) {
+    console.error("[meta] taxa de conversão inválida", productId);
+    return null;
+  }
+  return cfg;
+}
+
+async function resolveSource(db: ServiceDb, productId: string): Promise<Resolved | null> {
   const { data: product } = await db.from("products").select("owner_id, is_active").eq("id", productId).maybeSingle();
   if (!product?.is_active) return null;
 

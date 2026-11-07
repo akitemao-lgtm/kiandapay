@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
+import { rateError } from "@/lib/currency/rate";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { sendCapiEvent } from "@/lib/meta/capi";
 import { fieldErrors } from "@/lib/products/schema";
@@ -29,6 +30,10 @@ const schema = z
     if (v.metaEnabled && !v.pixelId) ctx.addIssue({ code: "custom", path: ["pixelId"], message: "Indique o Pixel ID" });
     if (v.metaCurrency !== "AOA" && !v.metaRate) ctx.addIssue({ code: "custom", path: ["metaRate"], message: "Indique a taxa de conversão" });
     if (v.utmifyEnabled && !v.utmifyRate) ctx.addIssue({ code: "custom", path: ["utmifyRate"], message: "Indique a taxa de conversão" });
+    const metaRateError = rateError(v.metaCurrency, v.metaRate);
+    if (metaRateError) ctx.addIssue({ code: "custom", path: ["metaRate"], message: metaRateError });
+    const utmifyRateError = rateError(v.utmifyCurrency, v.utmifyRate);
+    if (utmifyRateError) ctx.addIssue({ code: "custom", path: ["utmifyRate"], message: utmifyRateError });
   });
 
 export type IntegrationsInput = z.input<typeof schema>;
@@ -117,6 +122,8 @@ export async function testUtmify(): Promise<ActionResult> {
   ]);
   if (!secret?.utmify_token_encrypted) return { ok: false, error: "Guarde primeiro o token da UTMify." };
   if (!cfg?.utmify_conversion_rate) return { ok: false, error: "Guarde primeiro a taxa de conversão." };
+  const utmifyRateError = rateError(cfg.utmify_currency, Number(cfg.utmify_conversion_rate));
+  if (utmifyRateError) return { ok: false, error: utmifyRateError };
   let token: string;
   try {
     token = decryptSecret(secret.utmify_token_encrypted);
@@ -148,6 +155,8 @@ export async function testMeta(): Promise<ActionResult> {
     db.from("products").select("id, name, price").eq("owner_id", user.id).eq("is_active", true).limit(1).maybeSingle(),
   ]);
   if (!cfg?.meta_pixel_id) return { ok: false, error: "Guarde primeiro o Pixel ID." };
+  const metaRateError = rateError(cfg.meta_currency, Number(cfg.meta_conversion_rate));
+  if (metaRateError) return { ok: false, error: metaRateError };
   if (!secret?.meta_capi_token_encrypted) return { ok: false, error: "Guarde primeiro o token da API de Conversões." };
   if (!cfg.meta_test_event_code) return { ok: false, error: "Indique um Test Event Code para o evento aparecer em Testar eventos." };
   if (!product) return { ok: false, error: "Precisa de pelo menos um produto ativo para enviar o teste." };

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
+import { rateError } from "@/lib/currency/rate";
 import { encryptSecret } from "@/lib/crypto";
 import { sendCapiEvent } from "@/lib/meta/capi";
 import { loadMetaConfig } from "@/lib/meta/config";
@@ -23,6 +24,8 @@ const schema = z
   .superRefine((v, ctx) => {
     if (v.enabled && !v.pixelId) ctx.addIssue({ code: "custom", path: ["pixelId"], message: "Indique o Pixel ID" });
     if (v.currency !== "AOA" && !v.rate) ctx.addIssue({ code: "custom", path: ["rate"], message: "Indique a taxa de conversão" });
+    const invalidRate = rateError(v.currency, v.rate);
+    if (invalidRate) ctx.addIssue({ code: "custom", path: ["rate"], message: invalidRate });
   });
 
 export type MetaInput = z.input<typeof schema>;
