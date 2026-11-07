@@ -34,24 +34,49 @@ type Resolved = {
   source: { kind: "product"; productId: string } | { kind: "account"; ownerId: string };
 };
 
-/** Um Pixel próprio do produto tem prioridade; senão vale o da conta, só para produtos ativos. */
-async function resolve(db: ServiceDb, productId: string): Promise<Resolved | null> {
-  const { data } = await db.from("product_meta_settings").select("*").eq("product_id", productId).maybeSingle();
-  const row = data as MetaSettingsRow | null;
-  if (row?.enabled && row.pixel_id) {
-    return {
-      pixelId: row.pixel_id, currency: row.currency, rate: Number(row.conversion_rate ?? 1),
-      testEventCode: row.test_event_code || null, source: { kind: "product", productId },
-    };
+function readToken(encrypted: string | null | undefined): string | null {
+  if (!encrypted) return null;
+  try {
+    return decryptSecret(encrypted);
+  } catch (e) {
+    console.error("[meta] token ilegível", e);
+    return null;
   }
+}
+
+async function ownEncryptedToken(db: ServiceDb, productId: string) {
+  const { data } = await db.from("product_meta_secrets").select("capi_token_encrypted").eq("product_id", productId).maybeSingle();
+  return data?.capi_token_encrypted as string | null | undefined;
+}
+
+/**
+ * Só produtos ativos. Um Pixel próprio tem prioridade sobre o da conta, exceto
+ * se o token dele estiver ilegível: o Pixel e a API têm de usar o mesmo ID para
+ * o Meta deduplicar, por isso passam ambos para o da conta, se estiver ativo.
+ */
+async function resolve(db: ServiceDb, productId: string): Promise<Resolved | null> {
   const { data: product } = await db.from("products").select("owner_id, is_active").eq("id", productId).maybeSingle();
   if (!product?.is_active) return null;
+
+  const { data } = await db.from("product_meta_settings").select("*").eq("product_id", productId).maybeSingle();
+  const row = data as MetaSettingsRow | null;
+  const own: Resolved | null = row?.enabled && row.pixel_id
+    ? {
+        pixelId: row.pixel_id, currency: row.currency, rate: Number(row.conversion_rate ?? 1),
+        testEventCode: row.test_event_code || null, source: { kind: "product", productId },
+      }
+    : null;
+  if (own) {
+    const encrypted = await ownEncryptedToken(db, productId);
+    if (!encrypted || readToken(encrypted)) return own;
+  }
+
   const { data: account } = await db
     .from("account_integrations")
     .select("meta_enabled, meta_pixel_id, meta_test_event_code, meta_currency, meta_conversion_rate")
     .eq("owner_id", product.owner_id)
     .maybeSingle();
-  if (!account?.meta_enabled || !account.meta_pixel_id) return null;
+  if (!account?.meta_enabled || !account.meta_pixel_id) return own;
   return {
     pixelId: account.meta_pixel_id, currency: account.meta_currency, rate: Number(account.meta_conversion_rate ?? 1),
     testEventCode: account.meta_test_event_code || null, source: { kind: "account", ownerId: product.owner_id },
@@ -64,24 +89,13 @@ export async function loadPixelConfig(db: ServiceDb, productId: string) {
   return cfg && { pixelId: cfg.pixelId, currency: cfg.currency, rate: cfg.rate };
 }
 
-function readToken(encrypted: string | null | undefined): string | null {
-  if (!encrypted) return null;
-  try {
-    return decryptSecret(encrypted);
-  } catch (e) {
-    console.error("[meta] token ilegível", e);
-    return null;
-  }
-}
-
 /** Configuração completa para a API de Conversões (inclui o token decifrado). Só no servidor. */
 export async function loadMetaConfig(db: ServiceDb, productId: string): Promise<MetaConfig | null> {
   const cfg = await resolve(db, productId);
   if (!cfg) return null;
   let encrypted: string | null | undefined;
   if (cfg.source.kind === "product") {
-    const { data } = await db.from("product_meta_secrets").select("capi_token_encrypted").eq("product_id", productId).maybeSingle();
-    encrypted = data?.capi_token_encrypted;
+    encrypted = await ownEncryptedToken(db, productId);
   } else {
     const { data } = await db.from("account_integration_secrets").select("meta_capi_token_encrypted").eq("owner_id", cfg.source.ownerId).maybeSingle();
     encrypted = data?.meta_capi_token_encrypted;
@@ -89,10 +103,10 @@ export async function loadMetaConfig(db: ServiceDb, productId: string): Promise<
   return { pixelId: cfg.pixelId, currency: cfg.currency, rate: cfg.rate, testEventCode: cfg.testEventCode, token: readToken(encrypted) };
 }
 
-/** Produtos com envio ao Meta ativo, próprio ou herdado da conta. */
+/** Produtos ativos com envio ao Meta, próprio ou herdado da conta. */
 export async function metaEnabledProductIds(db: ServiceDb): Promise<string[]> {
   const [{ data: own }, { data: accounts }] = await Promise.all([
-    db.from("product_meta_settings").select("product_id").eq("enabled", true),
+    db.from("product_meta_settings").select("product_id, products!inner(is_active)").eq("enabled", true).eq("products.is_active", true),
     db.from("account_integrations").select("owner_id").eq("meta_enabled", true),
   ]);
   const ids = new Set((own ?? []).map((r: { product_id: string }) => r.product_id));
@@ -102,4 +116,19 @@ export async function metaEnabledProductIds(db: ServiceDb): Promise<string[]> {
     for (const p of products ?? []) ids.add(p.id as string);
   }
   return [...ids];
+}
+
+/** Produtos ativos da conta com Pixel próprio ligado, mas sem token que se consiga ler. */
+export async function productsWithoutReadableToken(db: ServiceDb, ownerId: string): Promise<string[]> {
+  const { data } = await db
+    .from("product_meta_settings")
+    .select("product_id, products!inner(name, owner_id, is_active)")
+    .eq("enabled", true)
+    .eq("products.owner_id", ownerId)
+    .eq("products.is_active", true);
+  const names: string[] = [];
+  for (const row of (data ?? []) as unknown as { product_id: string; products: { name: string } }[]) {
+    if (!readToken(await ownEncryptedToken(db, row.product_id))) names.push(row.products.name);
+  }
+  return names;
 }

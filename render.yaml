@@ -4,7 +4,7 @@ services:
     name: kiandapay
     runtime: node
     region: frankfurt # mais perto do Supabase (Frankfurt, eu-central-1)
-    plan: free # adormece após 15 min sem visitas: o primeiro lead espera ~1 min. Para a loja real, usar starter.
+    plan: free # o cron a cada 5 minutos evita que adormeça; conta para as 750 h grátis por mês da conta.
     buildCommand: npm ci && npm run build
     startCommand: npm run start
     healthCheckPath: /
@@ -37,4 +37,4 @@ services:
       - key: EMAIL_PROVIDER
         value: log
 
-# O plano grátis não tem cron: /api/cron tem de ser chamado por um serviço externo, com o CRON_SECRET.
+# O plano grátis não tem cron: /api/cron é chamado a cada 5 minutos pelo pg_cron do Supabase (migração 0012).

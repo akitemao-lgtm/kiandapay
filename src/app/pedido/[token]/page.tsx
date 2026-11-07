@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CheckoutView } from "@/components/checkout/CheckoutView";
 import { LegalFooter } from "@/components/checkout/LegalFooter";
-import { MetaPixel } from "@/components/meta/MetaPixel";
+import { MetaPurchasePixel } from "@/components/meta/MetaPixel";
 import { loadPixelConfig, metaValue } from "@/lib/meta/config";
+import { shouldFireBrowserPurchase } from "@/lib/meta/purchase";
 import { toCheckoutConfig } from "@/lib/checkout/defaults";
 import { toViewProduct } from "@/lib/checkout/public";
 import type { CheckoutPageRow } from "@/lib/checkout/types";
@@ -33,7 +34,7 @@ export default async function PedidoPage({ params }: { params: Promise<{ token: 
     getSettings(db, order.owner_id),
     db.from("checkout_pages").select("*").eq("product_id", order.product_id).maybeSingle(),
     loadPixelConfig(db, order.product_id),
-    db.from("orders").select("purchase_event_id, purchase_pixel_fired_at, customer_phone").eq("id", order.id).single(),
+    db.from("orders").select("purchase_event_id, purchase_pixel_fired_at, customer_phone, lead_id").eq("id", order.id).single(),
   ]);
   if (!product) notFound();
   const config = toCheckoutConfig(page as CheckoutPageRow | null);
@@ -43,16 +44,20 @@ export default async function PedidoPage({ params }: { params: Promise<{ token: 
   await db.from("order_access_logs").insert({ order_id: order.id, kind: "status_view", ip, user_agent: userAgent });
 
   const footer = <LegalFooter siteName={settings.site_name} supportPhone={settings.support_phone} />;
-  // Pixel: PageView sempre; Purchase quando pago e ainda não disparado no browser (dedup com a CAPI pelo event_id).
-  const pixelTag = pixel && meta && (
-    <MetaPixel
+  // O link do pedido é secreto: aqui o Pixel só corre para o Purchase, num iframe (dedup com a CAPI pelo event_id).
+  const pixelTag = pixel && meta && view === "paid" &&
+    shouldFireBrowserPurchase({ paidAt: order.paid_at, pixelFiredAt: meta.purchase_pixel_fired_at }) && (
+    <MetaPurchasePixel
       pixelId={pixel.pixelId}
       currency={pixel.currency}
       value={metaValue(order.amount_due, pixel)}
       productId={order.product_id}
       productName={product.name}
-      advancedMatching={{ ph: meta.customer_phone, external_id: order.id }}
-      purchase={view === "paid" && !meta.purchase_pixel_fired_at ? { token, eventId: meta.purchase_event_id, orderId: order.id } : null}
+      token={token}
+      eventId={meta.purchase_event_id}
+      orderId={order.id}
+      phone={meta.customer_phone}
+      externalId={meta.lead_id}
     />
   );
   const viewProduct = toViewProduct(product);

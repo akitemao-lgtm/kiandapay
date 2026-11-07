@@ -9,6 +9,9 @@ const ALIASES: Record<keyof Prefill, string[]> = {
   phone: ["telefone", "phone", "tel", "telemovel"],
 };
 
+/** Parâmetros do link que trazem dados pessoais. */
+export const PREFILL_PARAMS = Object.values(ALIASES).flat();
+
 const MAX = { name: 120, email: 160, phone: 20 };
 
 function pick(params: SearchParams, keys: string[]): string {

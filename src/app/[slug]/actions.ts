@@ -12,22 +12,25 @@ import { requestMeta } from "@/lib/request";
 import { getSettings } from "@/lib/settings";
 import { SLUG_REGEX } from "@/lib/slug";
 import { createServiceClient, type ServiceDb } from "@/lib/supabase/service";
+import { stripPersonalParams } from "@/lib/tracking/url";
 import { kickWebhooks } from "@/lib/webhooks/dispatch";
 
 const s = (max: number) => z.string().max(max).nullable().catch(null);
+// Textos longos ficam cortados em vez de se perderem por inteiro.
+const cut = (max: number) => z.string().transform((v) => v.slice(0, max)).nullable().catch(null);
 
 const trackingSchema = z.object({
   visitorId: z.string().uuid(),
   fbclid: s(500),
   fbp: s(200),
   fbc: s(700),
-  utmSource: s(200),
-  utmMedium: s(200),
-  utmCampaign: s(200),
-  utmContent: s(200),
-  utmTerm: s(200),
-  landingUrl: s(2000),
-  referrer: s(2000),
+  utmSource: cut(500),
+  utmMedium: cut(500),
+  utmCampaign: cut(500),
+  utmContent: cut(500),
+  utmTerm: cut(500),
+  landingUrl: cut(2000),
+  referrer: cut(2000),
 });
 type Tracking = z.infer<typeof trackingSchema>;
 
@@ -83,7 +86,7 @@ export async function recordVisit(
     .from("checkout_visits")
     .insert({
       product_id: product.id, visitor_id: t.visitorId, ip, user_agent: userAgent,
-      landing_url: t.landingUrl, ...trackingColumns(t),
+      landing_url: stripPersonalParams(t.landingUrl), ...trackingColumns(t),
     })
     .select("id, view_content_event_id")
     .single();
@@ -212,7 +215,7 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
     product_name: product.name, base_amount: price,
     payment_provider: provider.id, payment_entity: payment.entity, payment_reference: payment.reference,
     provider_payment_id: payment.providerPaymentId, provider_data: payment.data,
-    expires_at: expiresAt, ip, user_agent: userAgent, source_url: input.tracking.landingUrl,
+    expires_at: expiresAt, ip, user_agent: userAgent, source_url: stripPersonalParams(input.tracking.landingUrl),
     ...tracking,
   };
 

@@ -1,6 +1,7 @@
 import { IntegrationsForm } from "@/components/admin/IntegrationsForm";
 import { requireAdmin } from "@/lib/auth";
 import { decryptSecret } from "@/lib/crypto";
+import { productsWithoutReadableToken } from "@/lib/meta/config";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export const metadata = { title: "Integrações" };
@@ -17,10 +18,11 @@ function hint(encrypted: string | null | undefined) {
 export default async function IntegrationsPage() {
   const { supabase, user } = await requireAdmin();
   const db = createServiceClient();
-  const [{ data: cfg }, { data: secret }, { data: failed }] = await Promise.all([
+  const [{ data: cfg }, { data: secret }, { data: failed }, productsWithoutToken] = await Promise.all([
     supabase.from("account_integrations").select("*").eq("owner_id", user.id).maybeSingle(),
     db.from("account_integration_secrets").select("meta_capi_token_encrypted, utmify_token_encrypted").eq("owner_id", user.id).maybeSingle(),
     supabase.from("orders").select("utmify_error").not("utmify_error", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    productsWithoutReadableToken(db, user.id),
   ]);
 
   return (
@@ -33,6 +35,7 @@ export default async function IntegrationsPage() {
         metaTokenHint={hint(secret?.meta_capi_token_encrypted)}
         utmifyTokenHint={hint(secret?.utmify_token_encrypted)}
         lastUtmifyError={failed?.utmify_error ?? null}
+        productsWithoutToken={productsWithoutToken}
         initial={{
           metaEnabled: cfg?.meta_enabled ?? false,
           pixelId: cfg?.meta_pixel_id ?? "",

@@ -52,7 +52,6 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
     <main className="min-h-dvh" style={{ background: config.backgroundColor }}>
       {pixel && (
         <MetaPixel
-          checkout
           pixelId={pixel.pixelId}
           currency={pixel.currency}
           value={metaValue(product.price, pixel)}

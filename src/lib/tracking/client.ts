@@ -1,5 +1,7 @@
 "use client";
 
+import { stripPersonalParams } from "./url";
+
 /** Dados de rastreamento recolhidos no browser e enviados ao servidor. */
 export type ClientTracking = {
   visitorId: string;
@@ -16,6 +18,12 @@ export type ClientTracking = {
 };
 
 const DAY = 24 * 60 * 60;
+
+/** Limpa os dados pessoais da barra de endereço antes de o Pixel ler o URL. */
+export function scrubPersonalParams() {
+  const clean = stripPersonalParams(location.href);
+  if (clean && clean !== location.href) history.replaceState(history.state, "", clean);
+}
 
 function getCookie(name: string): string | null {
   const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -36,6 +44,7 @@ function setCookie(name: string, value: string, maxAgeSeconds: number) {
  * não se perder se o lead recarregar a página sem os parâmetros.
  */
 export function collectTracking(): ClientTracking {
+  scrubPersonalParams();
   const params = new URLSearchParams(location.search);
   const now = Date.now();
 

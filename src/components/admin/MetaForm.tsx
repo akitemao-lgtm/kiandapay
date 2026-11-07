@@ -76,7 +76,7 @@ export function MetaForm({ productId, price, initial, tokenHint }: Props) {
         <div>
           <label className={labelClass} htmlFor="test">Test Event Code (opcional)</label>
           <input id="test" value={v.testEventCode} onChange={(e) => setV({ ...v, testEventCode: e.target.value.trim() })} placeholder="TEST12345" className={`${inputClass} max-w-xs font-mono`} />
-          <p className={hintClass}>Enquanto estiver preenchido, os eventos do servidor aparecem em “Testar eventos” e não contam nas campanhas. Apague-o quando terminar os testes.</p>
+          <p className={hintClass}>Serve para ver os eventos em “Testar eventos”, mas o Meta conta-os também nas campanhas. Apague-o quando terminar os testes.</p>
           {errors.testEventCode && <p className={errorClass}>{errors.testEventCode}</p>}
         </div>
       </section>

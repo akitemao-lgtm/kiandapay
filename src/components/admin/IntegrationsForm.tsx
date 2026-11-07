@@ -16,13 +16,14 @@ type Props = {
   metaTokenHint: string | null;
   utmifyTokenHint: string | null;
   lastUtmifyError: string | null;
+  productsWithoutToken: string[];
   initial: {
     metaEnabled: boolean; pixelId: string; testEventCode: string; metaCurrency: string; metaRate: number | null;
     utmifyEnabled: boolean; utmifyCurrency: string; utmifyRate: number | null;
   };
 };
 
-export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyError, initial }: Props) {
+export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyError, productsWithoutToken, initial }: Props) {
   const [v, setV] = useState({
     ...initial,
     metaToken: "",
@@ -61,6 +62,11 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
           <h2 className="font-semibold">Pixel do Facebook</h2>
           <p className={hintClass}>Pixel no browser e API de Conversões no servidor, com os mesmos eventos deduplicados.</p>
         </div>
+        {productsWithoutToken.length > 0 && (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Pixel próprio sem token legível: {productsWithoutToken.join(", ")}. Com o Pixel da conta ativo, estes produtos usam-no. Para manter o próprio, cole o token de novo no produto.
+          </p>
+        )}
         <label className="flex items-center gap-3">
           <input type="checkbox" checked={v.metaEnabled} onChange={(e) => setV({ ...v, metaEnabled: e.target.checked })} className="h-5 w-5" />
           <span className="font-medium">Ativar em todos os produtos</span>
@@ -86,7 +92,7 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
         <div>
           <label className={labelClass} htmlFor="test">Test Event Code (opcional)</label>
           <input id="test" value={v.testEventCode} onChange={(e) => setV({ ...v, testEventCode: e.target.value.trim() })} placeholder="TEST12345" className={`${inputClass} max-w-xs font-mono`} />
-          <p className={hintClass}>Enquanto estiver preenchido, os eventos do servidor não contam nas campanhas. Apague-o quando terminar os testes.</p>
+          <p className={hintClass}>Serve para ver os eventos em “Testar eventos”, mas o Meta conta-os também nas campanhas. Apague-o quando terminar os testes.</p>
           {errors.testEventCode && <p className={errorClass}>{errors.testEventCode}</p>}
         </div>
         <div className="flex flex-wrap items-end gap-4">
@@ -147,7 +153,8 @@ export function IntegrationsForm({ metaTokenHint, utmifyTokenHint, lastUtmifyErr
           </div>
         </div>
         {lastUtmifyError && <p className={errorClass}>Último erro de envio: {lastUtmifyError}</p>}
-        <button type="button" disabled={pending} onClick={() => run(testUtmify)} className={buttonSecondary}>Testar ligação</button>
+        <button type="button" disabled={pending} onClick={() => run(testUtmify)} className={buttonSecondary}>Validar formato</button>
+        <p className={hintClass}>A UTMify aceita qualquer token sem dar erro. Para confirmar o seu, veja se a próxima venda aparece no painel da UTMify.</p>
       </section>
 
       <div className="flex flex-wrap items-center gap-3">

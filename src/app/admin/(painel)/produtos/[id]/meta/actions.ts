@@ -8,6 +8,7 @@ import { sendCapiEvent } from "@/lib/meta/capi";
 import { loadMetaConfig } from "@/lib/meta/config";
 import { fieldErrors } from "@/lib/products/schema";
 import type { ActionResult } from "@/lib/products/types";
+import { requestMeta } from "@/lib/request";
 import { createServiceClient } from "@/lib/supabase/service";
 
 const schema = z
@@ -80,12 +81,13 @@ export async function sendTestEvent(productId: string): Promise<ActionResult> {
   const cfg = await loadMetaConfig(db, productId);
   if (!cfg) return { ok: false, error: "Ative o Meta e indique o Pixel ID primeiro." };
   if (!cfg.token) return { ok: false, error: "Guarde primeiro o token da API de Conversões." };
-  if (!cfg.testEventCode) return { ok: false, error: "Indique um Test Event Code para não misturar o teste com dados reais." };
+  if (!cfg.testEventCode) return { ok: false, error: "Indique um Test Event Code para o evento aparecer em Testar eventos." };
   const { data: product } = await supabase.from("products").select("name, price").eq("id", productId).single();
+  const { ip, userAgent } = await requestMeta();
   const r = await sendCapiEvent(db, {
     productId, orderId: null, eventName: "ViewContent", eventId: `teste_${crypto.randomUUID()}`, eventTime: new Date(),
     sourceUrl: null, trigger: "manual_resend",
-    user: { phone: "244900000000", name: "Teste Painel", externalId: "teste", fbp: null, fbc: null, ip: null, userAgent: null },
+    user: { phone: "244900000000", name: "Teste Painel", externalId: "teste", fbp: null, fbc: null, ip, userAgent },
     amountAoa: Number(product?.price ?? 0), contentName: product?.name ?? "Teste",
   }, cfg);
   if (r.status === "success") return { ok: true, message: `Meta recebeu ${r.eventsReceived} evento(s). Veja em Gestor de Eventos → Testar eventos.` };

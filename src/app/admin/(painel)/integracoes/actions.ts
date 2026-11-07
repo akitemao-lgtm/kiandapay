@@ -6,9 +6,10 @@ import { requireAdmin } from "@/lib/auth";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { sendCapiEvent } from "@/lib/meta/capi";
 import { fieldErrors } from "@/lib/products/schema";
+import { requestMeta } from "@/lib/request";
 import type { ActionResult } from "@/lib/products/types";
 import { createServiceClient } from "@/lib/supabase/service";
-import { buildUtmifyPayload, UTMIFY_CURRENCIES } from "@/lib/utmify/payload";
+import { buildUtmifyPayload, UTMIFY_CURRENCIES, UTMIFY_MAX_AGE_DAYS } from "@/lib/utmify/payload";
 import { postToUtmify, syncUtmifyOrders } from "@/lib/utmify/sync";
 
 const schema = z
@@ -32,6 +33,15 @@ const schema = z
 
 export type IntegrationsInput = z.input<typeof schema>;
 
+function readable(encrypted: string | null | undefined): string | null {
+  if (!encrypted) return null;
+  try {
+    return decryptSecret(encrypted);
+  } catch {
+    return null;
+  }
+}
+
 export async function saveIntegrations(input: IntegrationsInput): Promise<ActionResult> {
   const { supabase, user } = await requireAdmin();
   const parsed = schema.safeParse(input);
@@ -44,6 +54,7 @@ export async function saveIntegrations(input: IntegrationsInput): Promise<Action
     .select("utmify_token_encrypted")
     .eq("owner_id", user.id)
     .maybeSingle();
+  const utmifyTokenChanged = !!v.utmifyToken && v.utmifyToken !== readable(secret?.utmify_token_encrypted);
   if (v.utmifyEnabled && !v.utmifyToken && !secret?.utmify_token_encrypted) {
     return { ok: false, error: "Verifique os campos assinalados.", fieldErrors: { utmifyToken: "Cole o token da UTMify" } };
   }
@@ -75,6 +86,14 @@ export async function saveIntegrations(input: IntegrationsInput): Promise<Action
       return { ok: false, error: "Configuração guardada, mas o token não." };
     }
   }
+  if (utmifyTokenChanged) {
+    // A UTMify responde "SUCCESS" mesmo com um token errado: com um token novo, tudo volta a ser enviado.
+    await db
+      .from("orders")
+      .update({ utmify_status: null, utmify_attempts: 0, utmify_error: null, utmify_sent_at: null })
+      .eq("owner_id", user.id)
+      .gte("created_at", new Date(Date.now() - UTMIFY_MAX_AGE_DAYS * 86_400_000).toISOString());
+  }
   revalidatePath("/admin/integracoes");
   if (v.utmifyEnabled) await syncUtmifyOrders(db).catch((e) => console.error("[utmify]", e));
   return { ok: true, message: "Integrações guardadas." };
@@ -88,7 +107,7 @@ export async function removeIntegrationToken(kind: "meta" | "utmify"): Promise<A
   return { ok: true, message: "Token removido." };
 }
 
-/** Valida as credenciais na UTMify com isTest: nada fica guardado no painel deles. */
+/** Valida o formato com isTest: nada fica guardado. A UTMify não recusa tokens errados, por isso isto não prova o token. */
 export async function testUtmify(): Promise<ActionResult> {
   const { supabase, user } = await requireAdmin();
   const db = createServiceClient();
@@ -116,10 +135,10 @@ export async function testUtmify(): Promise<ActionResult> {
     true,
   );
   const r = await postToUtmify(token, payload);
-  return r.ok ? { ok: true, message: "A UTMify aceitou o pedido de teste." } : { ok: false, error: `A UTMify recusou: ${r.error}` };
+  return r.ok ? { ok: true, message: "Formato aceite. Isto não confirma o token: veja se a próxima venda aparece no painel da UTMify." } : { ok: false, error: `A UTMify recusou: ${r.error}` };
 }
 
-/** Envia um ViewContent com o Test Event Code para confirmar a ligação no Gestor de Eventos. */
+/** Envia um ViewContent com o Test Event Code para confirmar a ligação em Testar eventos. O Meta conta-o nos dados do Pixel. */
 export async function testMeta(): Promise<ActionResult> {
   const { supabase, user } = await requireAdmin();
   const db = createServiceClient();
@@ -130,7 +149,7 @@ export async function testMeta(): Promise<ActionResult> {
   ]);
   if (!cfg?.meta_pixel_id) return { ok: false, error: "Guarde primeiro o Pixel ID." };
   if (!secret?.meta_capi_token_encrypted) return { ok: false, error: "Guarde primeiro o token da API de Conversões." };
-  if (!cfg.meta_test_event_code) return { ok: false, error: "Indique um Test Event Code para não misturar o teste com dados reais." };
+  if (!cfg.meta_test_event_code) return { ok: false, error: "Indique um Test Event Code para o evento aparecer em Testar eventos." };
   if (!product) return { ok: false, error: "Precisa de pelo menos um produto ativo para enviar o teste." };
   let token: string;
   try {
@@ -138,10 +157,11 @@ export async function testMeta(): Promise<ActionResult> {
   } catch {
     return { ok: false, error: "O token guardado já não é legível. Cole-o de novo." };
   }
+  const { ip, userAgent } = await requestMeta();
   const r = await sendCapiEvent(db, {
     productId: product.id, orderId: null, eventName: "ViewContent", eventId: `teste_${crypto.randomUUID()}`, eventTime: new Date(),
     sourceUrl: null, trigger: "manual_resend",
-    user: { phone: "244900000000", name: "Teste Painel", externalId: "teste", fbp: null, fbc: null, ip: null, userAgent: null },
+    user: { phone: "244900000000", name: "Teste Painel", externalId: "teste", fbp: null, fbc: null, ip, userAgent },
     amountAoa: Number(product.price), contentName: product.name,
   }, {
     pixelId: cfg.meta_pixel_id, token, testEventCode: cfg.meta_test_event_code,

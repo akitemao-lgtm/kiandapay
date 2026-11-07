@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { siteUrl } from "@/lib/site";
+import { stripPersonalParams } from "@/lib/tracking/url";
 import type { ServiceDb } from "@/lib/supabase/service";
 import { GRAPH_VERSION, loadMetaConfig, metaEnabledProductIds, metaValue, type MetaConfig } from "./config";
 
@@ -83,7 +84,7 @@ export async function sendCapiEvent(db: ServiceDb, input: SendInput, cfgOverride
     event_time: Math.floor(input.eventTime.getTime() / 1000),
     event_id: input.eventId,
     action_source: "website",
-    event_source_url: input.sourceUrl ?? siteUrl(),
+    event_source_url: stripPersonalParams(input.sourceUrl) ?? siteUrl(),
     user_data: hashedUserData(input.user),
     custom_data: {
       currency: cfg.currency,
@@ -155,14 +156,14 @@ async function notifyMetaError(db: ServiceDb, orderId: string, message: string) 
 }
 
 type OrderForMeta = {
-  id: string; product_id: string; product_name: string; amount_due: number; status: string;
+  id: string; lead_id: string; product_id: string; product_name: string; amount_due: number; status: string;
   customer_name: string; customer_phone: string; customer_email: string | null; fbp: string | null; fbc: string | null; ip: string | null;
   user_agent: string | null; source_url: string | null; created_at: string; paid_at: string | null;
   initiate_checkout_event_id: string; purchase_event_id: string; visit_id: string | null;
 };
 
 const ORDER_META_COLUMNS =
-  "id, product_id, product_name, amount_due, status, customer_name, customer_phone, customer_email, fbp, fbc, ip, user_agent, source_url, created_at, paid_at, initiate_checkout_event_id, purchase_event_id, visit_id";
+  "id, lead_id, product_id, product_name, amount_due, status, customer_name, customer_phone, customer_email, fbp, fbc, ip, user_agent, source_url, created_at, paid_at, initiate_checkout_event_id, purchase_event_id, visit_id";
 
 async function loadOrder(db: ServiceDb, orderId: string): Promise<OrderForMeta | null> {
   const { data } = await db.from("orders").select(ORDER_META_COLUMNS).eq("id", orderId).maybeSingle();
@@ -171,7 +172,7 @@ async function loadOrder(db: ServiceDb, orderId: string): Promise<OrderForMeta |
 
 function userOf(o: OrderForMeta) {
   return {
-    phone: o.customer_phone, name: o.customer_name, email: o.customer_email, externalId: o.id,
+    phone: o.customer_phone, name: o.customer_name, email: o.customer_email, externalId: o.lead_id,
     fbp: o.fbp, fbc: o.fbc, ip: o.ip, userAgent: o.user_agent,
   };
 }
@@ -209,6 +210,14 @@ export async function sendPurchase(db: ServiceDb, orderId: string, trigger: Trig
 export async function retryMissingPurchases(db: ServiceDb, limit = 20): Promise<number> {
   const since = new Date(Date.now() - 7 * 24 * 3_600_000).toISOString();
   const before = new Date(Date.now() - 5 * 60_000).toISOString();
+  // Um processo que caiu a meio deixa o envio "pending", e o índice único bloquearia nova tentativa.
+  await db
+    .from("meta_events")
+    .update({ status: "error", response_body: { error: "Envio interrompido" }, sent_at: new Date().toISOString() })
+    .eq("event_name", "Purchase")
+    .eq("source", "server")
+    .eq("status", "pending")
+    .lt("created_at", before);
   const productIds = await metaEnabledProductIds(db);
   if (!productIds.length) return 0;
   const { data } = await db
