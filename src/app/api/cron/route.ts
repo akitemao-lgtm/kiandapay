@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { retryMissingPurchases } from "@/lib/meta/capi";
 import { dispatchDueMessages } from "@/lib/messaging/queue";
 import { createServiceClient } from "@/lib/supabase/service";
+import { syncUtmifyOrders } from "@/lib/utmify/sync";
 import { dispatchWebhooks, pruneWebhookDeliveries } from "@/lib/webhooks/dispatch";
 
 export const dynamic = "force-dynamic";
@@ -32,5 +33,6 @@ export async function GET(req: Request) {
   const purchases = await retryMissingPurchases(db);
   const webhooks = await dispatchWebhooks(db, 100);
   await pruneWebhookDeliveries(db);
-  return NextResponse.json({ expired: expired ?? 0, sent, purchases, webhooks });
+  const utmify = await syncUtmifyOrders(db);
+  return NextResponse.json({ expired: expired ?? 0, sent, purchases, webhooks, utmify });
 }

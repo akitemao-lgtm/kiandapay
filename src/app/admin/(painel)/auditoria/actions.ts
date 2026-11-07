@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/auth";
 import { suggestMapping, type Mapping } from "@/lib/audit/parse";
 import { readStatement, runImport, type ImportResult } from "@/lib/audit/service";
 import type { ActionResult } from "@/lib/products/types";
+import { kickWebhooks } from "@/lib/webhooks/dispatch";
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -62,6 +63,7 @@ export async function markAsFraud(orderIds: string[]): Promise<ActionResult> {
   await supabase.from("leads").update({ blocked_at: now, blocked_reason: `Fraude (auditoria): ${reason}` }).in("id", orders.map((o) => o.lead_id));
   const proofs = orders.map((o) => o.approved_proof_id).filter(Boolean) as string[];
   if (proofs.length) await supabase.from("payment_proofs").update({ fraud_suspected: true }).in("id", proofs);
+  kickWebhooks();
   revalidatePath("/admin/auditoria");
   return { ok: true, message: `${orders.length} pedido(s) marcado(s) como fraude: acesso retirado e número bloqueado.` };
 }

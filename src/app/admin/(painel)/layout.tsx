@@ -10,6 +10,7 @@ const NAV = [
   { href: "/admin/modelos", label: "Modelos" },
   { href: "/admin/auditoria", label: "Auditoria" },
   { href: "/admin/webhooks", label: "Webhooks" },
+  { href: "/admin/integracoes", label: "Integrações" },
   { href: "/admin/configuracoes", label: "Configurações" },
 ];
 

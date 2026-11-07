@@ -42,7 +42,7 @@ Stack: Next.js 15 (App Router) · Supabase (Postgres, Auth, Storage) · Tailwind
 | `SMS_PROVIDER`, `WHATSAPP_PROVIDER`, `EMAIL_PROVIDER` | só servidor | `twilio` / `resend` / `log` |
 | `TWILIO_*`, `RESEND_API_KEY`, `EMAIL_FROM` | só servidor | Credenciais dos provedores de mensagens |
 | `META_TOKEN_ENCRYPTION_KEY` | só servidor | Cifra (AES-256-GCM) dos tokens da API de Conversões |
-| `META_GRAPH_VERSION` | só servidor | Versão da Graph API (por omissão `v23.0`) |
+| `META_GRAPH_VERSION` | só servidor | Versão da Graph API (por omissão `v27.0`) |
 
 Lista completa e comentada em `.env.example`.
 

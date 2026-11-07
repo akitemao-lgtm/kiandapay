@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { decryptSecret } from "@/lib/crypto";
 import { orderStatusUrl } from "@/lib/site";
 import { createServiceClient, type ServiceDb } from "@/lib/supabase/service";
+import { syncUtmifyOrders } from "@/lib/utmify/sync";
 import { retryDelayMinutes, signWebhook } from "./security";
 import { postWebhook, type SendResult } from "./send";
 
@@ -115,7 +116,11 @@ export async function dispatchDelivery(db: ServiceDb, id: string): Promise<SendR
 
 /** Envia depois de responder; o que falhar aqui, o cron repete. */
 export function kickWebhooks() {
-  const run = () => dispatchWebhooks(createServiceClient()).catch((e) => console.error("[webhook]", e));
+  const run = () =>
+    Promise.all([
+      dispatchWebhooks(createServiceClient()).catch((e) => console.error("[webhook]", e)),
+      syncUtmifyOrders(createServiceClient()).catch((e) => console.error("[utmify]", e)),
+    ]);
   try {
     after(run);
   } catch {

@@ -28,7 +28,7 @@ services:
       - key: META_TOKEN_ENCRYPTION_KEY
         generateValue: true
       - key: META_GRAPH_VERSION
-        value: v23.0
+        value: v27.0
       # Até configurar Twilio/Resend, as mensagens só ficam no registo do servidor.
       - key: SMS_PROVIDER
         value: log
