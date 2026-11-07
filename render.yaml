@@ -1,0 +1,58 @@
+# Render Blueprint — KiandaPay (Next.js). Ver README → Deploy.
+services:
+  - type: web
+    name: kiandapay
+    runtime: node
+    region: frankfurt # mais perto do Supabase (Frankfurt, eu-central-1)
+    plan: starter # o plano gratuito adormece após 15 min: o primeiro lead esperaria ~1 min
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://hfkgbizyrdpjtyzbgxzt.supabase.co
+      # Chave pública (publishable): vai sempre para o browser; o acesso é limitado pelo RLS.
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        value: sb_publishable_Jbn3To7j_tXvTDjyi50oVw_7amWmoQ8
+      # Segredos: o Render pede o valor ao criar o serviço (nunca ficam no Git).
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true
+      # 32 bytes aleatórios em base64, gerados pelo Render.
+      - key: META_TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: META_GRAPH_VERSION
+        value: v23.0
+      # Até configurar Twilio/Resend, as mensagens só ficam no registo do servidor.
+      - key: SMS_PROVIDER
+        value: log
+      - key: WHATSAPP_PROVIDER
+        value: log
+      - key: EMAIL_PROVIDER
+        value: log
+
+  # Tarefas periódicas: chama /api/cron a cada 5 minutos com o mesmo CRON_SECRET do serviço web.
+  - type: cron
+    name: kiandapay-cron
+    runtime: node
+    region: frankfurt
+    plan: starter
+    schedule: "*/5 * * * *"
+    buildCommand: echo "sem build"
+    startCommand: node scripts/cron.mjs
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: CRON_URL
+        value: https://kiandapay.onrender.com/api/cron
+      - key: CRON_SECRET
+        fromService:
+          type: web
+          name: kiandapay
+          envVarKey: CRON_SECRET
