@@ -2,12 +2,12 @@
 
 import { after } from "next/server";
 import { z } from "zod";
+import { NO_NAME, readCustomer, type Customer } from "@/lib/checkout/customer";
 import { readOptions } from "@/lib/checkout/defaults";
 import { isSellerActive, PUBLIC_PRODUCT_COLUMNS } from "@/lib/checkout/public";
 import { sendInitiateCheckout } from "@/lib/meta/capi";
 import { dispatchDueMessages, queueOrderMessages } from "@/lib/messaging/queue";
 import { getPaymentProvider } from "@/lib/payments/provider";
-import { normalizeAngolanPhone } from "@/lib/phone";
 import { requestMeta } from "@/lib/request";
 import { getSettings } from "@/lib/settings";
 import { SLUG_REGEX } from "@/lib/slug";
@@ -125,26 +125,8 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
   // Anti-spam: honeypot preenchido ou submetido em menos de 2 s.
   if (input.website || Date.now() - input.startedAt < 2000) return { ok: false, error: GENERIC };
 
-  const fieldErrors: Record<string, string> = {};
-  const name = input.name.replace(/\s+/g, " ");
-  // Basta um nome (ex.: "Maria"); o apelido é opcional.
-  if (name.trim().length < 2) fieldErrors.name = "Indique o seu nome.";
-  const phone = normalizeAngolanPhone(input.phone);
-  if (!phone) fieldErrors.phone = "Número inválido. Use um telemóvel angolano: 9XX XXX XXX.";
-  // Se vier preenchido tem de ser válido; se é obrigatório vê-se depois de saber o produto.
-  let email = input.email || null;
-  if (email && !z.string().email().safeParse(email).success) fieldErrors.email = "Indique um e-mail válido.";
-  if (Object.keys(fieldErrors).length) return { ok: false, error: "Verifique os dados.", fieldErrors };
-
   const db = createServiceClient();
   const { ip, userAgent } = await requestMeta();
-
-  if (ip && !(await allowed(db, `order:ip:${ip}`, 600, 10))) {
-    return { ok: false, error: "Muitas tentativas seguidas. Aguarde alguns minutos." };
-  }
-  if (!(await allowed(db, `order:phone:${phone}`, 3600, 5))) {
-    return { ok: false, error: "Já criou vários pedidos com este número. Aguarde um pouco ou use o link que recebeu." };
-  }
 
   const { data: product } = await db
     .from("products")
@@ -156,10 +138,16 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
   }
 
   const { data: page } = await db.from("checkout_pages").select("payment_instructions").eq("product_id", product.id).maybeSingle();
-  const { emailField } = readOptions(page?.payment_instructions ?? null);
-  if (emailField === "hidden") email = null;
-  else if (emailField === "required" && !email) {
-    return { ok: false, error: "Verifique os dados.", fieldErrors: { email: "Indique um e-mail válido." } };
+  const { customer, errors: fieldErrors } = readCustomer(input, readOptions(page?.payment_instructions ?? null));
+  const { name, phone, email } = customer;
+  if (email && !z.string().email().safeParse(email).success) fieldErrors.email = "Indique um e-mail válido.";
+  if (Object.keys(fieldErrors).length) return { ok: false, error: "Verifique os dados.", fieldErrors };
+
+  if (ip && !(await allowed(db, `order:ip:${ip}`, 600, 10))) {
+    return { ok: false, error: "Muitas tentativas seguidas. Aguarde alguns minutos." };
+  }
+  if (phone && !(await allowed(db, `order:phone:${phone}`, 3600, 5))) {
+    return { ok: false, error: "Já criou vários pedidos com este número. Aguarde um pouco ou use o link que recebeu." };
   }
 
   const settings = await getSettings(db, product.owner_id);
@@ -169,13 +157,8 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
     return { ok: false, error: "Os pagamentos estão temporariamente indisponíveis. Tente mais tarde." };
   }
 
-  // Lead (um por telefone em cada conta). O email só é actualizado se vier preenchido.
-  const { data: lead, error: leadError } = await db
-    .from("leads")
-    .upsert({ owner_id: product.owner_id, phone, name, ...(email ? { email } : {}) }, { onConflict: "owner_id,phone" })
-    .select("id, blocked_at")
-    .single();
-  if (leadError) {
+  const { data: lead, error: leadError } = await saveLead(db, product.owner_id, customer);
+  if (leadError || !lead) {
     console.error("[pedido] lead", leadError);
     return { ok: false, error: GENERIC };
   }
@@ -211,7 +194,7 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
 
   const baseRow = {
     product_id: product.id, lead_id: lead.id, visit_id: visitId,
-    customer_name: name, customer_phone: phone, customer_email: email,
+    customer_name: name ?? NO_NAME, customer_phone: phone, customer_email: email,
     product_name: product.name, base_amount: price,
     payment_provider: provider.id, payment_entity: payment.entity, payment_reference: payment.reference,
     provider_payment_id: payment.providerPaymentId, provider_data: payment.data,
@@ -239,7 +222,7 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
 
   await queueOrderMessages(
     db,
-    { ...order, amount_due: Number(order.amount_due), customer_phone: phone!, customer_email: email, product_name: product.name },
+    { ...order, amount_due: Number(order.amount_due), customer_phone: phone, customer_email: email, product_name: product.name },
     settings,
   );
   after(() => dispatchDueMessages(createServiceClient()).catch((e) => console.error("[mensagens]", e)));
@@ -248,6 +231,20 @@ export async function createOrder(raw: unknown): Promise<CreateOrderResult> {
   after(() => sendInitiateCheckout(createServiceClient(), order!.id).catch((e) => console.error("[meta] IC", e)));
 
   return { ok: true, token: order.public_token, initiateCheckoutEventId: order.initiate_checkout_event_id };
+}
+
+/** Um lead por telefone em cada conta; sem telefone, um novo em cada pedido. O nome e o email guardados só mudam se vierem preenchidos. */
+async function saveLead(db: ServiceDb, ownerId: string, { name, phone, email }: Customer) {
+  const row = { owner_id: ownerId, phone, name: name ?? NO_NAME, ...(email ? { email } : {}) };
+  if (!phone) return db.from("leads").insert(row).select("id, blocked_at").single();
+  if (!name) {
+    const { data: existing } = await db.from("leads").select("id, blocked_at").eq("owner_id", ownerId).eq("phone", phone).maybeSingle();
+    if (existing) {
+      if (email) await db.from("leads").update({ email }).eq("id", existing.id);
+      return { data: existing, error: null };
+    }
+  }
+  return db.from("leads").upsert(row, { onConflict: "owner_id,phone" }).select("id, blocked_at").single();
 }
 
 /** 1–99 Kz livres entre os pedidos pendentes; 0 se estiverem todos ocupados. */

@@ -63,7 +63,7 @@ export default async function CheckoutPage({ params, searchParams }: Props) {
         product={toViewProduct(product)}
         config={config}
         screen="form"
-        formSlot={<CheckoutForm slug={product.slug} buttonText={config.buttonText} price={product.price} emailField={config.emailField} prefill={prefill} />}
+        formSlot={<CheckoutForm slug={product.slug} buttonText={config.buttonText} price={product.price} fields={config} prefill={prefill} />}
         footerSlot={footer}
       />
     </main>

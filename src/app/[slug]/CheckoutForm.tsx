@@ -3,17 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { fieldClass, PayButton, PaymentMethodOption, TermsNote } from "@/components/checkout/CheckoutView";
+import { readCustomer, type CustomerFields } from "@/lib/checkout/customer";
 import type { Prefill } from "@/lib/checkout/prefill";
-import type { EmailField } from "@/lib/checkout/types";
-import { normalizeAngolanPhone } from "@/lib/phone";
 import { collectTracking, type ClientTracking } from "@/lib/tracking/client";
 import { createOrder, recordVisit } from "./actions";
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+type Props = { slug: string; buttonText: string; price: number; fields: CustomerFields; prefill?: Prefill };
 
-type Props = { slug: string; buttonText: string; price: number; emailField: EmailField; prefill?: Prefill };
-
-export function CheckoutForm({ slug, buttonText, price, emailField, prefill }: Props) {
+export function CheckoutForm({ slug, buttonText, price, fields, prefill }: Props) {
   const router = useRouter();
   const [name, setName] = useState(prefill?.name ?? "");
   const [email, setEmail] = useState(prefill?.email ?? "");
@@ -40,11 +37,7 @@ export function CheckoutForm({ slug, buttonText, price, emailField, prefill }: P
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (pending || !method) return;
-    const local: Record<string, string> = {};
-    if (name.trim().length < 2) local.name = "Indique o seu nome.";
-    const mail = emailField === "hidden" ? "" : email.trim();
-    if ((emailField === "required" || mail) && !EMAIL.test(mail)) local.email = "Indique um e-mail válido.";
-    if (!normalizeAngolanPhone(phone)) local.phone = "Número inválido. Use um telemóvel angolano: 9XX XXX XXX.";
+    const local = readCustomer({ name, email, phone }, fields).errors;
     setErrors(local);
     setFormError(null);
     if (Object.keys(local).length) return;
@@ -52,7 +45,7 @@ export function CheckoutForm({ slug, buttonText, price, emailField, prefill }: P
     setPending(true);
     try {
       const res = await createOrder({
-        slug, name, phone, email: mail, website,
+        slug, name, phone, email, website,
         startedAt: startedAt.current,
         visitId: visitId.current,
         tracking: tracking.current ?? collectTracking(),
@@ -78,20 +71,24 @@ export function CheckoutForm({ slug, buttonText, price, emailField, prefill }: P
 
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-4">
-      <div>
-        <input id="name" aria-label="Nome completo" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome completo" className={fieldClass} aria-invalid={!!errors.name} />
-        {err("name")}
-      </div>
-      {emailField !== "hidden" && (
+      {fields.nameField !== "hidden" && (
         <div>
-          <input id="email" aria-label="E-mail" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={emailField === "optional" ? "E-mail (opcional)" : "E-mail"} className={fieldClass} aria-invalid={!!errors.email} />
+          <input id="name" aria-label="Nome completo" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} placeholder={fields.nameField === "optional" ? "Nome completo (opcional)" : "Nome completo"} className={fieldClass} aria-invalid={!!errors.name} />
+          {err("name")}
+        </div>
+      )}
+      {fields.emailField !== "hidden" && (
+        <div>
+          <input id="email" aria-label="E-mail" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={fields.emailField === "optional" ? "E-mail (opcional)" : "E-mail"} className={fieldClass} aria-invalid={!!errors.email} />
           {err("email")}
         </div>
       )}
-      <div>
-        <input id="phone" aria-label="Número de telefone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Número de telefone" className={fieldClass} aria-invalid={!!errors.phone} />
-        {err("phone")}
-      </div>
+      {fields.phoneField !== "hidden" && (
+        <div>
+          <input id="phone" aria-label="Número de telefone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={fields.phoneField === "optional" ? "Número de telefone (opcional)" : "Número de telefone"} className={fieldClass} aria-invalid={!!errors.phone} />
+          {err("phone")}
+        </div>
+      )}
       {/* Honeypot: escondido de pessoas, preenchido por bots. */}
       <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
         <label htmlFor="website">Website</label>

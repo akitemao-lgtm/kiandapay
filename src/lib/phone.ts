@@ -7,6 +7,7 @@ export function normalizeAngolanPhone(input: string): string | null {
 }
 
 /** "244923456789" → "+244 923 456 789" */
-export function formatAngolanPhone(n: string): string {
+export function formatAngolanPhone(n: string | null | undefined): string {
+  if (!n) return "—";
   return `+244 ${n.slice(3, 6)} ${n.slice(6, 9)} ${n.slice(9)}`;
 }

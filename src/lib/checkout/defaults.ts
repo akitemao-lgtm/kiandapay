@@ -1,4 +1,4 @@
-import type { CheckoutConfig, CheckoutOptions, CheckoutPageRow, PaymentInstructions } from "./types";
+import type { CheckoutConfig, CheckoutOptions, CheckoutPageRow, FieldMode, PaymentInstructions } from "./types";
 
 export const PAYMENT_METHOD_LABELS: Record<"bank_app" | "express" | "atm", string> = {
   bank_app: "App do banco",
@@ -43,7 +43,9 @@ const PREVIOUS_DEFAULT_BANK_APP = [
 ];
 
 export const DEFAULT_OPTIONS: CheckoutOptions = {
+  nameField: "required",
   emailField: "required",
+  phoneField: "required",
   proofAlwaysVisible: false,
   instructionsMode: "shown",
 };
@@ -51,8 +53,11 @@ export const DEFAULT_OPTIONS: CheckoutOptions = {
 /** Lê as opções guardadas, ignorando valores desconhecidos. */
 export function readOptions(pi: CheckoutPageRow["payment_instructions"]): CheckoutOptions {
   const o = pi?.options ?? {};
+  const field = (v: FieldMode | undefined): FieldMode => (v === "optional" || v === "hidden" ? v : "required");
   return {
-    emailField: o.emailField === "optional" || o.emailField === "hidden" ? o.emailField : DEFAULT_OPTIONS.emailField,
+    nameField: field(o.nameField),
+    emailField: field(o.emailField),
+    phoneField: field(o.phoneField),
     proofAlwaysVisible: o.proofAlwaysVisible === true,
     instructionsMode:
       o.instructionsMode === "collapsed" || o.instructionsMode === "hidden" ? o.instructionsMode : DEFAULT_OPTIONS.instructionsMode,

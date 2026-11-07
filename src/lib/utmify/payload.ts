@@ -16,7 +16,7 @@ export type UtmifyOrder = {
   created_at: string;
   paid_at: string | null;
   customer_name: string;
-  customer_phone: string;
+  customer_phone: string | null;
   customer_email: string | null;
   ip: string | null;
   product_id: string;

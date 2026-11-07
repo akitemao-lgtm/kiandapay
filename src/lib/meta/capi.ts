@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
+import { NO_NAME } from "@/lib/checkout/customer";
 import { siteUrl } from "@/lib/site";
 import { stripPersonalParams } from "@/lib/tracking/url";
 import type { ServiceDb } from "@/lib/supabase/service";
@@ -157,7 +158,7 @@ async function notifyMetaError(db: ServiceDb, orderId: string, message: string) 
 
 type OrderForMeta = {
   id: string; lead_id: string; product_id: string; product_name: string; amount_due: number; status: string;
-  customer_name: string; customer_phone: string; customer_email: string | null; fbp: string | null; fbc: string | null; ip: string | null;
+  customer_name: string; customer_phone: string | null; customer_email: string | null; fbp: string | null; fbc: string | null; ip: string | null;
   user_agent: string | null; source_url: string | null; created_at: string; paid_at: string | null;
   initiate_checkout_event_id: string; purchase_event_id: string; visit_id: string | null;
 };
@@ -172,7 +173,7 @@ async function loadOrder(db: ServiceDb, orderId: string): Promise<OrderForMeta |
 
 function userOf(o: OrderForMeta) {
   return {
-    phone: o.customer_phone, name: o.customer_name, email: o.customer_email, externalId: o.lead_id,
+    phone: o.customer_phone, name: o.customer_name === NO_NAME ? null : o.customer_name, email: o.customer_email, externalId: o.lead_id,
     fbp: o.fbp, fbc: o.fbc, ip: o.ip, userAgent: o.user_agent,
   };
 }

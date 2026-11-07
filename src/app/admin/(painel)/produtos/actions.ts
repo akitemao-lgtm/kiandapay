@@ -216,7 +216,7 @@ export async function saveCheckoutPage(productId: string, input: CheckoutInput):
     // As opções vão junto das instruções (campo jsonb), sem precisar de colunas novas.
     payment_instructions: {
       ...c.paymentInstructions,
-      options: { emailField: c.emailField, proofAlwaysVisible: c.proofAlwaysVisible, instructionsMode: c.instructionsMode },
+      options: { nameField: c.nameField, emailField: c.emailField, phoneField: c.phoneField, proofAlwaysVisible: c.proofAlwaysVisible, instructionsMode: c.instructionsMode },
     },
   });
   if (error) {

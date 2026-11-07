@@ -113,7 +113,7 @@ type PurchaseProps = CheckoutProps & {
   token: string;
   eventId: string;
   orderId: string;
-  phone: string;
+  phone: string | null;
   externalId: string;
 };
 
@@ -132,7 +132,7 @@ export function MetaPurchasePixel({ pixelId, currency, value, productId, product
     frame.onload = () => {
       const w = frame.contentWindow as W | null;
       if (!w) return;
-      initPixel(w, pixelId, { ph: phone, external_id: externalId })(
+      initPixel(w, pixelId, { ...(phone ? { ph: phone } : {}), external_id: externalId })(
         "trackSingle", pixelId, "Purchase",
         { value, currency, content_ids: [productId], content_name: productName, content_type: "product", order_id: orderId },
         { eventID: eventId },

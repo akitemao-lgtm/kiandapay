@@ -14,12 +14,14 @@ export type PaymentInstructions = {
   later: string[];
 };
 
-export type EmailField = "required" | "optional" | "hidden";
+export type FieldMode = "required" | "optional" | "hidden";
 export type InstructionsMode = "shown" | "collapsed" | "hidden";
 
 /** Opções do ecrã de pagamento e do formulário, guardadas em payment_instructions.options. */
 export type CheckoutOptions = {
-  emailField: EmailField;
+  nameField: FieldMode;
+  emailField: FieldMode;
+  phoneField: FieldMode;
   /** Caixa de envio do comprovativo visível desde o início (sem esperar os minutos). */
   proofAlwaysVisible: boolean;
   /** Instruções de como pagar: visíveis, minimizadas (abrem ao tocar) ou escondidas. */

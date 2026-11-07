@@ -7,7 +7,7 @@ import { CheckoutView, type CheckoutProduct } from "@/components/checkout/Checko
 import { buttonPrimary, cardClass, errorClass, hintClass, inputClass, labelClass } from "@/components/ui/styles";
 import { safeAction } from "@/lib/client/safe-action";
 import { DEFAULT_PAYMENT_INSTRUCTIONS, PROOF_REVEAL_MINUTES } from "@/lib/checkout/defaults";
-import type { CheckoutConfig, EmailField, InstructionsMode } from "@/lib/checkout/types";
+import type { CheckoutConfig, FieldMode, InstructionsMode } from "@/lib/checkout/types";
 import type { ActionResult } from "@/lib/products/types";
 
 type Props = {
@@ -18,7 +18,7 @@ type Props = {
   reference: string;
 };
 
-const EMAIL_OPTIONS: [EmailField, string][] = [
+const FIELD_OPTIONS: [FieldMode, string][] = [
   ["required", "Obrigatório"],
   ["optional", "Opcional"],
   ["hidden", "Desativado"],
@@ -166,10 +166,18 @@ export function CheckoutEditor({ productId, product, initial, entity, reference 
 
         <section className={`${cardClass} space-y-5`}>
           <h2 className="font-semibold">Formulário e ecrã de pagamento</h2>
-          <div>
-            <p className={labelClass}>Campo de e-mail</p>
-            <Choice name="Campo de e-mail" value={config.emailField} options={EMAIL_OPTIONS} onChange={(v) => { set("emailField", v); setScreen("form"); }} />
-          </div>
+          {([["nameField", "Nome"], ["emailField", "E-mail"], ["phoneField", "Telefone"]] as const).map(([field, label]) => (
+            <div key={field}>
+              <p className={labelClass}>Campo de {label.toLowerCase()}</p>
+              <Choice name={`Campo de ${label.toLowerCase()}`} value={config[field]} options={FIELD_OPTIONS} onChange={(v) => { set(field, v); setScreen("form"); }} />
+            </div>
+          ))}
+          {config.phoneField !== "required" && (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Sem telefone, o cliente não recebe SMS nem WhatsApp, e o bloqueio por fraude não apanha novos pedidos da mesma pessoa.
+              {config.emailField !== "required" && " Sem telefone nem e-mail, o cliente só volta ao pedido se guardar o link."}
+            </p>
+          )}
           <div>
             <p className={labelClass}>Instruções de como pagar</p>
             <Choice

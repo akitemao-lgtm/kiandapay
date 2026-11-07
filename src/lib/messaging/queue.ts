@@ -9,11 +9,17 @@ type OrderForMessages = {
   id: string;
   order_number: number;
   public_token: string;
-  customer_phone: string;
+  customer_phone: string | null;
   customer_email: string | null;
   amount_due: number;
   product_name: string;
 };
+
+/** SMS e WhatsApp, só para quem deixou telefone. */
+function phoneMessages(settings: Settings, phone: string | null) {
+  if (!phone) return [];
+  return settings.lead_channels.filter((c) => c !== "email").map((channel) => ({ channel, recipient: phone }));
+}
 
 /** Link da página do pedido (imediato) + lembrete opcional (agendado). */
 export async function queueOrderMessages(db: ServiceDb, order: OrderForMessages, settings: Settings) {
@@ -27,12 +33,9 @@ export async function queueOrderMessages(db: ServiceDb, order: OrderForMessages,
     `${shop}: o seu pedido #${order.order_number} (${amount}) foi criado. ` +
     `Pague por referência e envie o comprovativo nesta página: ${link}`;
 
-  const rows: Record<string, unknown>[] = settings.lead_channels
-    .filter((c) => c !== "email")
-    .map((channel) => ({
-      order_id: order.id, audience: "lead", channel, template: "status_link",
-      recipient: order.customer_phone, body: text, scheduled_for: now,
-    }));
+  const rows: Record<string, unknown>[] = phoneMessages(settings, order.customer_phone).map((to) => ({
+    ...to, order_id: order.id, audience: "lead", template: "status_link", body: text, scheduled_for: now,
+  }));
 
   if (order.customer_email) {
     rows.push({
@@ -46,9 +49,9 @@ export async function queueOrderMessages(db: ServiceDb, order: OrderForMessages,
 
   if (settings.reminder_enabled) {
     const at = new Date(Date.now() + settings.reminder_after_minutes * 60_000).toISOString();
-    for (const channel of settings.lead_channels.filter((c) => c !== "email")) {
+    for (const to of phoneMessages(settings, order.customer_phone)) {
       rows.push({
-        order_id: order.id, audience: "lead", channel, template: "reminder", recipient: order.customer_phone,
+        ...to, order_id: order.id, audience: "lead", template: "reminder",
         scheduled_for: at,
         body: `${shop}: ainda não recebemos o comprovativo do pedido #${order.order_number}. Já pagou? Envie aqui: ${link}`,
       });
@@ -61,7 +64,7 @@ export async function queueOrderMessages(db: ServiceDb, order: OrderForMessages,
   }
 }
 
-type LeadContact = { id: string; order_number: number; public_token: string; customer_phone: string; customer_email: string | null };
+type LeadContact = { id: string; order_number: number; public_token: string; customer_phone: string | null; customer_email: string | null };
 
 /** Mensagem curta ao lead, com o link da página do pedido, pelos canais configurados. */
 export async function queueLeadNotice(db: ServiceDb, order: LeadContact, settings: Settings, template: string, text: string) {
@@ -69,9 +72,9 @@ export async function queueLeadNotice(db: ServiceDb, order: LeadContact, setting
   const shop = settings.site_name || "Loja";
   const body = `${shop}: ${text} ${link}`;
   const now = new Date().toISOString();
-  const rows: Record<string, unknown>[] = settings.lead_channels
-    .filter((c) => c !== "email")
-    .map((channel) => ({ order_id: order.id, audience: "lead", channel, template, recipient: order.customer_phone, body, scheduled_for: now }));
+  const rows: Record<string, unknown>[] = phoneMessages(settings, order.customer_phone).map((to) => ({
+    ...to, order_id: order.id, audience: "lead", template, body, scheduled_for: now,
+  }));
   if (order.customer_email) {
     rows.push({ order_id: order.id, audience: "lead", channel: "email", template, recipient: order.customer_email, body, scheduled_for: now });
   }

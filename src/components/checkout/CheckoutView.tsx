@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { PROOF_REVEAL_MINUTES, readableOn } from "@/lib/checkout/defaults";
-import type { CheckoutConfig, EmailField, InstructionsMode } from "@/lib/checkout/types";
+import type { CheckoutConfig, CheckoutOptions, FieldMode, InstructionsMode } from "@/lib/checkout/types";
 import { formatKz } from "@/lib/format";
 import { publicMediaUrl } from "@/lib/storage";
 
@@ -59,7 +59,7 @@ export function CheckoutView({
         {screen === "form" ? (
           <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/10">
             <ProductHeader product={product} title={config.title || product.name} banner={publicMediaUrl(config.bannerPath)} />
-            <div className="mt-6">{formSlot ?? <SampleForm price={product.price} buttonText={config.buttonText} emailField={config.emailField} />}</div>
+            <div className="mt-6">{formSlot ?? <SampleForm price={product.price} buttonText={config.buttonText} fields={config} />}</div>
           </section>
         ) : screen === "status" ? (
           statusSlot
@@ -106,14 +106,15 @@ export const fieldClass =
   "block w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-base outline-none placeholder:text-gray-500 focus:border-[var(--c-primary)] focus:ring-2 focus:ring-[var(--c-primary)]/20";
 
 /** Pré-visualização do formulário no painel (não envia nada). */
-function SampleForm({ price, buttonText, emailField }: { price: number; buttonText: string; emailField: EmailField }) {
+function SampleForm({ price, buttonText, fields }: { price: number; buttonText: string; fields: CheckoutOptions }) {
+  const label = (text: string, mode: FieldMode) => mode !== "hidden" && (
+    <div className={`${fieldClass} text-gray-500`}>{mode === "optional" ? `${text} (opcional)` : text}</div>
+  );
   return (
     <div className="space-y-4" aria-hidden>
-      <div className={`${fieldClass} text-gray-500`}>Nome completo</div>
-      {emailField !== "hidden" && (
-        <div className={`${fieldClass} text-gray-500`}>{emailField === "optional" ? "E-mail (opcional)" : "E-mail"}</div>
-      )}
-      <div className={`${fieldClass} text-gray-500`}>Número de telefone</div>
+      {label("Nome completo", fields.nameField)}
+      {label("E-mail", fields.emailField)}
+      {label("Número de telefone", fields.phoneField)}
       <PaymentMethodOption selected onSelect={() => {}} />
       <PayButton price={price} text={buttonText} disabled={false} />
       <TermsNote />
