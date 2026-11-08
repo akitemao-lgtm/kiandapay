@@ -7,6 +7,7 @@ import { getSettings, type Settings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import type { ServiceDb } from "@/lib/supabase/service";
 import { analyzeImage, analyzePdf, type ImageAnalysis, type PdfAnalysis } from "./analyze";
+import { scheduleImageReading } from "./image-reading";
 import { decide, type Decision } from "./decide";
 import { extractFields, type Extracted } from "./extract";
 import { matchTemplate, type TemplateRow } from "./templates";
@@ -214,6 +215,7 @@ export async function processProofUpload(
   );
 
   result = await applyDecision(db, settings, { ...order, attempt }, proof.id, result);
+  if (file.kind === "image" && result.decision === "exception") scheduleImageReading(proof.id);
 
   const attemptsLeft = Math.max(0, settings.max_uploads_per_order - attempt);
   return { ok: true, decision: result.decision, reason: result.decision === "rejected" ? result.reason : null, attemptsLeft };

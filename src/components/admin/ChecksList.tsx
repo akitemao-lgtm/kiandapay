@@ -3,6 +3,8 @@ import type { CheckOutcome } from "@/lib/proofs/templates";
 const CHECK_LABELS: Record<string, string> = {
   file_unique: "Ficheiro único",
   file_type: "Tipo de ficheiro",
+  image_ocr: "Leitura da imagem",
+  image_repeat: "Pagamento repetido",
   readable: "Leitura do PDF",
   entity_reference: "Entidade e referência",
   amount: "Valor",

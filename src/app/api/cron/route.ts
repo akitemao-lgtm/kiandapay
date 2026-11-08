@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { retryMissingPurchases } from "@/lib/meta/capi";
 import { dispatchDueMessages } from "@/lib/messaging/queue";
+import { readPendingImages } from "@/lib/proofs/image-reading";
 import { createServiceClient } from "@/lib/supabase/service";
 import { syncUtmifyOrders } from "@/lib/utmify/sync";
 import { dispatchWebhooks, pruneWebhookDeliveries } from "@/lib/webhooks/dispatch";
@@ -30,7 +31,8 @@ async function authorized(req: Request, db: Db) {
  *  - marca como expirados os pedidos sem pagamento fora do prazo;
  *  - envia mensagens agendadas (lembretes) e reenvia as que ficaram por enviar;
  *  - repete o Purchase da API de Conversões que tenha falhado (até 3 vezes, 7 dias);
- *  - envia à UTMify os pedidos que mudaram de estado.
+ *  - envia à UTMify os pedidos que mudaram de estado;
+ *  - lê as imagens de comprovativos que ficaram por ler.
  * Autenticação: cabeçalho "Authorization: Bearer <CRON_SECRET>".
  */
 export async function GET(req: Request) {
@@ -43,5 +45,9 @@ export async function GET(req: Request) {
   const webhooks = await dispatchWebhooks(db, 100);
   await pruneWebhookDeliveries(db);
   const utmify = await syncUtmifyOrders(db);
-  return NextResponse.json({ expired: expired ?? 0, sent, purchases, webhooks, utmify });
+  const images = await readPendingImages(db).catch((e) => {
+    console.error("[cron] imagens", e);
+    return 0;
+  });
+  return NextResponse.json({ expired: expired ?? 0, sent, purchases, webhooks, utmify, images });
 }

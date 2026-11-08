@@ -9,7 +9,7 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Leitura de PDFs no servidor: módulos nativos/grandes ficam fora do bundle.
-  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
+  serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas", "tesseract.js"],
   outputFileTracingIncludes: {
     "/pedido/[token]/comprovativo": ["./node_modules/pdfjs-dist/standard_fonts/**"],
     "/admin/**": ["./node_modules/pdfjs-dist/standard_fonts/**"],
