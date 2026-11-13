@@ -13,6 +13,13 @@ import { tmpdir } from "node:os";
 export const OCR_VARIANTS = ["bin", "gamma", "up15"] as const;
 export type OcrVariant = (typeof OCR_VARIANTS)[number];
 
+/**
+ * Limite do lado maior antes de ler. É o que mais pesa na memória: medido sobre os
+ * comprovativos reais desta plataforma, 2000 px aprova 40 dos 80 que o administrador
+ * aprovou à mão, 1400 px aprova 31 e 1100 px aprova 27 — em nenhum caso passa algum
+ * dos que ele recusou. Se a instância vier a ficar sem memória, baixar para 1400
+ * devolve-a ao nível do que já corria antes, à custa de nove aprovações.
+ */
 const MAX_SIDE = 2000;
 const UPSCALED_SIDE = 2600;
 
@@ -70,34 +77,48 @@ async function prepare(image: Image, variant: OcrVariant): Promise<Buffer> {
   return canvas.toBuffer("image/png");
 }
 
+/** Uma passagem do OCR, com o motor criado e largado só para ela. */
+async function recognize(input: Buffer): Promise<string> {
+  const { createWorker } = await import("tesseract.js");
+  // "por+eng": o modelo inglês não é para as palavras (os comprovativos não as têm),
+  // é para os algarismos — sem ele a leitura dos valores piora muito.
+  const worker = await createWorker("por+eng", 1, { cachePath: tmpdir() });
+  try {
+    const { data } = await worker.recognize(input);
+    return data.text;
+  } finally {
+    await worker.terminate();
+  }
+}
+
 /**
  * Lê a imagem uma vez por tratamento, pela mesma ordem de OCR_VARIANTS.
- * `enough` permite parar mais cedo — quando as duas primeiras leituras já
- * concordam em tudo, a terceira não acrescenta nada e poupa tempo e memória.
+ *
+ * O motor é largado entre passagens, não no fim: segura cerca de 150 MB e, mantendo-o
+ * aberto para as três, o pico sobe o suficiente para arriscar a instância (512 MB, com
+ * o servidor a ocupar já uma boa parte). Custa cerca de meio segundo por passagem, que
+ * não se nota porque isto corre depois de o cliente ter resposta.
+ *
+ * `enough` permite parar mais cedo — quando as duas primeiras leituras já concordam
+ * em tudo, a terceira não acrescenta nada.
  */
 export function readImageTexts(bytes: Uint8Array, enough?: (texts: string[]) => boolean): Promise<string[]> {
   const job = queue.then(async () => {
-    const [{ createWorker }, { loadImage }] = await Promise.all([import("tesseract.js"), import("@napi-rs/canvas")]);
-    const worker = await createWorker("por+eng", 1, { cachePath: tmpdir() });
+    const { loadImage } = await import("@napi-rs/canvas");
+    let image: Image | null = null;
     try {
-      let image: Image | null = null;
-      try {
-        image = await loadImage(Buffer.from(bytes));
-      } catch {
-        image = null; // formato que o canvas não abre (ex.: HEIC): tenta-se o ficheiro como veio
-      }
-      const texts: string[] = [];
-      for (const variant of OCR_VARIANTS) {
-        const input = image ? await prepare(image, variant) : Buffer.from(bytes);
-        const { data } = await worker.recognize(input);
-        texts.push(data.text);
-        if (!image) break; // sem canvas, os tratamentos dariam todos o mesmo
-        if (texts.length >= 2 && enough?.(texts)) break;
-      }
-      return texts;
-    } finally {
-      await worker.terminate();
+      image = await loadImage(Buffer.from(bytes));
+    } catch {
+      image = null; // formato que o canvas não abre (ex.: HEIC): tenta-se o ficheiro como veio
     }
+    const texts: string[] = [];
+    for (const variant of OCR_VARIANTS) {
+      const input = image ? await prepare(image, variant) : Buffer.from(bytes);
+      texts.push(await recognize(input));
+      if (!image) break; // sem canvas, os tratamentos dariam todos o mesmo
+      if (texts.length >= 2 && enough?.(texts)) break;
+    }
+    return texts;
   });
   queue = job.catch(() => {});
   return job;

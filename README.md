@@ -190,7 +190,11 @@ por produto e por campanha (UTM). Calculado pela função SQL `admin_dashboard` 
 2. **Render:** New → Blueprint → escolher o repositório. O `render.yaml` cria o serviço web e o cron; o Render pede
    só os valores marcados `sync: false` (`SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL`). Notas:
    - `NEXT_PUBLIC_SITE_URL` = `https://o-seu-dominio` (é o link enviado aos clientes);
-   - `META_TOKEN_ENCRYPTION_KEY` = **a mesma** de desenvolvimento se quiser manter os tokens já guardados;
+   - `META_TOKEN_ENCRYPTION_KEY` = **a mesma** de sempre. É ela que abre os tokens da API de Conversões e da
+     UTMify já guardados na base de dados; com uma chave diferente esses tokens ficam ilegíveis e as vendas deixam
+     de chegar ao Meta **sem nada falhar à vista** — só uma linha `[meta] token ilegível` no registo. Guarde-a num
+     sítio seguro. Se a perder, não há como a recuperar: volte a colar os tokens no painel (Integrações, e nos
+     produtos que tenham Pixel próprio), que ficam cifrados com a nova;
    - `CRON_SECRET` novo (`openssl rand -hex 32`);
    - provedores de mensagens (`SMS_PROVIDER`, `WHATSAPP_PROVIDER`, `EMAIL_PROVIDER` e credenciais). Não usar `log` em produção.
 3. **Região:** Frankfurt, a mais próxima do Supabase (`eu-central-1`, Frankfurt).

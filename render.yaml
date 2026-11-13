@@ -24,9 +24,12 @@ services:
         sync: false
       - key: CRON_SECRET
         generateValue: true
-      # 32 bytes aleatórios em base64, gerados pelo Render.
+      # Cifra os tokens da API de Conversões e da UTMify guardados na BD.
+      # NÃO pode ser gerada pelo Render: uma chave nova torna ilegíveis os tokens já
+      # guardados, e as vendas deixam de chegar ao Meta sem nada falhar à vista.
+      # Numa instalação nova, gere-a uma vez e guarde-a: openssl rand -base64 32
       - key: META_TOKEN_ENCRYPTION_KEY
-        generateValue: true
+        sync: false
       - key: META_GRAPH_VERSION
         value: v27.0
       # Até configurar Twilio/Resend, as mensagens só ficam no registo do servidor.
