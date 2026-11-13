@@ -81,6 +81,7 @@ export function SettingsForm({
     orderTtlMinutes: settings.order_ttl_minutes,
     uploadGraceHours: settings.upload_grace_hours,
     uniqueAmountEnabled: settings.unique_amount_enabled,
+    allowScreenshotTime: settings.allow_screenshot_time,
     maxUploadsPerOrder: settings.max_uploads_per_order,
     maxUploadsPerPhone: settings.max_uploads_per_phone,
     phoneUploadWindowHours: settings.phone_upload_window_hours,
@@ -145,6 +146,19 @@ export function SettingsForm({
             <span className="text-sm">
               <span className="font-medium">Valor único por pedido</span>
               <span className="block text-gray-500">Soma 1 a 99 Kz aleatórios ao preço, sem repetir entre pedidos pendentes. Ajuda a cruzar com o extrato.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-3">
+            <input type="checkbox" checked={v.allowScreenshotTime} onChange={(e) => set("allowScreenshotTime", e.target.checked)} className="mt-0.5 h-5 w-5" />
+            <span className="text-sm">
+              <span className="font-medium">Aceitar ecrãs sem a data do pagamento</span>
+              <span className="block text-gray-500">
+                Muitos clientes cortam o topo do ecrã do Multicaixa, onde está a data, e esses comprovativos vão todos
+                para Exceções. Ligue isto para os aprovar pela hora a que o telemóvel fez a captura — mas saiba que
+                num ecrã sem data tudo o resto (entidade, referência, valor) está à vista na página do pedido, e a hora
+                da captura renova-se tirando o ecrã outra vez: o mesmo pagamento pode acabar aprovado em mais do que um
+                pedido. Só com a auditoria do extrato em dia.
+              </span>
             </span>
           </label>
         </section>

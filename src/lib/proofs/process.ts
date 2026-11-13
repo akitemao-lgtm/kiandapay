@@ -1,13 +1,13 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { cancelReminders, queueAdminMessage } from "@/lib/messaging/queue";
+import { cancelReminders } from "@/lib/messaging/queue";
 import { markOrderPaid } from "@/lib/orders/paid";
 import { orderView } from "@/lib/orders/public";
 import { getSettings, type Settings } from "@/lib/settings";
-import { siteUrl } from "@/lib/site";
 import type { ServiceDb } from "@/lib/supabase/service";
 import { analyzeImage, analyzePdf, type ImageAnalysis, type PdfAnalysis } from "./analyze";
-import { scheduleImageReading } from "./image-reading";
+import { notifyException, scheduleImageReading } from "./image-reading";
+import { earlierOrders } from "./receipt-context";
 import { decide, type Decision } from "./decide";
 import { extractFields, type Extracted } from "./extract";
 import { matchTemplate, type TemplateRow } from "./templates";
@@ -155,6 +155,13 @@ export async function processProofUpload(
     }
   }
 
+  // Quem paga e só depois abre o pedido novo está a pagar um pedido anterior ainda por pagar.
+  // Nas imagens quem decide é a leitura do texto, que procura esses pedidos por sua conta.
+  const uploadedAt = new Date().toISOString();
+  const earlier = file.kind === "pdf"
+    ? await earlierOrders(db, { ...order, amount_due: Number(order.amount_due) }, settings, uploadedAt)
+    : [];
+
   let result: Decision = read.error
     ? {
         decision: "exception", fraud: false, reasonCode: "unreadable", reason: read.error,
@@ -163,6 +170,8 @@ export async function processProofUpload(
     : decide({
         order: { created_at: order.created_at, expires_at: order.expires_at, amount_due: Number(order.amount_due) },
         payment: { entity: order.payment_entity, reference: order.payment_reference },
+        earlier,
+        uploadedAt,
         analysis: read.analysis,
         extracted: read.extracted,
         template: read.template,
@@ -214,8 +223,9 @@ export async function processProofUpload(
     })),
   );
 
-  result = await applyDecision(db, settings, { ...order, attempt }, proof.id, result);
-  if (file.kind === "image" && result.decision === "exception") scheduleImageReading(proof.id);
+  const willRead = file.kind === "image" && result.decision === "exception";
+  result = await applyDecision(db, settings, { ...order, attempt }, proof.id, result, willRead);
+  if (willRead) scheduleImageReading(proof.id);
 
   const attemptsLeft = Math.max(0, settings.max_uploads_per_order - attempt);
   return { ok: true, decision: result.decision, reason: result.decision === "rejected" ? result.reason : null, attemptsLeft };
@@ -227,6 +237,7 @@ async function applyDecision(
   order: { id: string; lead_id: string; order_number: number; customer_name: string; product_name: string; amount_due: number; attempt: number },
   proofId: string,
   result: Decision,
+  quiet = false,
 ): Promise<Decision> {
   const now = new Date().toISOString();
   const setProof = (decision: Decision["decision"], r: Decision) =>
@@ -254,17 +265,14 @@ async function applyDecision(
   if (result.decision === "exception") {
     await setProof("exception", result);
     await db.from("orders").update({ status: "under_review" }).eq("id", order.id).in("status", ["awaiting_payment", "expired"]);
-    await db.from("admin_notifications").insert({
-      type: "exception", order_id: order.id, proof_id: proofId,
-      title: `Pedido #${order.order_number}: ${result.reason ?? "comprovativo para analisar"}`,
-    });
-    await queueAdminMessage(db, settings, {
-      template: "admin_exception",
-      orderId: order.id,
-      body:
-        `Comprovativo para analisar — pedido #${order.order_number} (${order.product_name}), ${order.customer_name}.\n` +
-        `Motivo: ${result.reason}\n${siteUrl()}/admin/excecoes/${proofId}`,
-    });
+    // As imagens ainda vão ser lidas e podem ser aprovadas em segundos: quem avisa é a leitura.
+    if (!quiet) {
+      await notifyException(
+        db, settings,
+        { id: proofId, order_id: order.id, orders: { order_number: order.order_number, customer_name: order.customer_name, product_name: order.product_name } },
+        result.reason ?? "comprovativo para analisar",
+      );
+    }
     return result;
   }
 

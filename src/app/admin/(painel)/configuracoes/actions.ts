@@ -22,6 +22,7 @@ export async function saveSettings(input: SettingsInput): Promise<ActionResult> 
       order_ttl_minutes: s.orderTtlMinutes,
       upload_grace_hours: s.uploadGraceHours,
       unique_amount_enabled: s.uniqueAmountEnabled,
+      allow_screenshot_time: s.allowScreenshotTime,
       max_uploads_per_order: s.maxUploadsPerOrder,
       max_uploads_per_phone: s.maxUploadsPerPhone,
       phone_upload_window_hours: s.phoneUploadWindowHours,

@@ -11,6 +11,7 @@ export const settingsSchema = z
     orderTtlMinutes: z.number().int().min(10, "Mínimo 10 minutos").max(43200, "Máximo 30 dias"),
     uploadGraceHours: z.number().int().min(0).max(168, "Máximo 7 dias"),
     uniqueAmountEnabled: z.boolean(),
+    allowScreenshotTime: z.boolean(),
     maxUploadsPerOrder: z.number().int().min(1).max(10),
     maxUploadsPerPhone: z.number().int().min(1).max(50),
     phoneUploadWindowHours: z.number().int().min(1).max(720),

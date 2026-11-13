@@ -56,6 +56,24 @@ describe("rejeição automática (regras 1, 3, 4, 5)", () => {
     expect(r.checks.find((c) => c.code === "paid_at_window")?.message).toMatch(/anterior/);
   });
 
+  it("regra 3: paga um pedido anterior do mesmo cliente, ainda por pagar", () => {
+    // Pagou às 14:13 e só depois abriu este pedido, às 15:00.
+    const tarde = { created_at: "2026-10-16T15:00:00.000Z", expires_at: "2026-10-17T15:00:00.000Z", amount_due: 5000 };
+    expect(run({ order: tarde }).decision).toBe("rejected");
+    const r = run({
+      order: tarde,
+      earlier: [{ order_number: 1001, created_at: ORDER.created_at, expires_at: ORDER.expires_at, payment_entity: "10116", payment_reference: "955567206" }],
+    });
+    expect(r.decision).toBe("approved");
+    expect(r.checks.find((c) => c.code === "paid_at_window")?.message).toMatch(/#1001/);
+  });
+
+  it("uma data adiantada fica para análise, não recusa quem pagou", () => {
+    const r = run({ uploadedAt: "2026-10-16T14:00:00.000Z" }); // comprovativo diz 14:13
+    expect(r.decision).toBe("exception");
+    expect(r.checks.find((c) => c.code === "paid_at_window")?.message).toMatch(/posterior ao envio/);
+  });
+
   it("regra 3: pagamento depois do prazo", () => {
     const r = run({ extracted: extracted({ paidAt: "2026-10-18T10:00:00.000Z" }) });
     expect(r.decision).toBe("rejected");
@@ -105,9 +123,9 @@ describe("Exceções (revisão manual)", () => {
     expect(r.reasonCode).toBe(code);
   });
 
-  it("imagem ou fotografia vai sempre para Exceções", () => {
+  it("imagem fica à espera da leitura do texto, nunca é decidida aqui", () => {
     expect(run({ analysis: { kind: "image", qr: [] }, extracted: null })).toMatchObject({
-      decision: "exception", reasonCode: "image", reason: "Comprovativo em imagem (verificação manual)",
+      decision: "exception", reasonCode: "image",
     });
   });
 

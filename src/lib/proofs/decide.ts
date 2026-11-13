@@ -1,11 +1,19 @@
 import { formatKz } from "@/lib/format";
 import type { ImageAnalysis, PdfAnalysis } from "./analyze";
 import type { Extracted } from "./extract";
+import { paymentWindow, WINDOW_PROBLEMS, type PayableOrder } from "./receipt-checks";
 import { authenticityChecks, type CheckOutcome, type TemplateRow } from "./templates";
 
 export type DecisionInput = {
   order: { created_at: string; expires_at: string; amount_due: number };
   payment: { entity: string; reference: string };
+  /**
+   * Pedidos anteriores do mesmo cliente, do mesmo valor, ainda dentro do prazo de envio.
+   * Quem paga e só depois abre o pedido novo está a pagar um destes.
+   */
+  earlier?: PayableOrder[];
+  /** Momento em que o comprovativo foi enviado. */
+  uploadedAt?: string;
   analysis: PdfAnalysis | ImageAnalysis;
   extracted: Extracted | null;
   template: TemplateRow | null;
@@ -23,9 +31,6 @@ export type Decision = {
   fraud: boolean;
   checks: CheckOutcome[];
 };
-
-/** Margem para relógios e comprovativos só com minutos (sem segundos). */
-const CLOCK_MARGIN_MS = 2 * 60_000;
 
 export function decide(input: DecisionInput): Decision {
   const checks: CheckOutcome[] = [];
@@ -48,24 +53,32 @@ export function decide(input: DecisionInput): Decision {
   }
   add({ code: "file_unique", result: "pass", effect: "none", message: "Ficheiro nunca carregado antes" });
 
-  // Imagens: nunca aprovação automática
+  // Imagens: a decisão vem da leitura do texto, que corre a seguir (image-reading.ts).
   if (analysis.kind === "image") {
-    add({ code: "file_type", result: "warn", effect: "exception", message: "Imagem/fotografia: verificação manual" });
-    return { decision: "exception", fraud: false, checks, reasonCode: "image", reason: "Comprovativo em imagem (verificação manual)" };
+    add({ code: "file_type", result: "skip", effect: "none", message: "Imagem: decidida pela leitura do texto" });
+    return { decision: "exception", fraud: false, checks, reasonCode: "image", reason: "A ler o comprovativo…" };
   }
   const x = ex!;
 
-  // Regra 1 — Entidade e Referência
-  const entityOk = x.entity === payment.entity;
-  const refOk = x.reference === payment.reference.replace(/\D/g, "");
-  if (x.entity && x.reference) {
-    add(entityOk && refOk
-      ? { code: "entity_reference", result: "pass", effect: "none", message: "Entidade e referência corretas" }
-      : { code: "entity_reference", result: "fail", effect: "reject",
+  // Regra 1 — Entidade e Referência (deste pedido ou de um pedido anterior por pagar)
+  const here: PayableOrder = {
+    order_number: null, created_at: order.created_at, expires_at: order.expires_at,
+    payment_entity: payment.entity, payment_reference: payment.reference,
+  };
+  const targets = [here, ...(input.earlier ?? [])].filter(
+    (o) => o.payment_entity === x.entity && o.payment_reference.replace(/\D/g, "") === x.reference,
+  );
+  if (!x.entity || !x.reference) {
+    add({ code: "entity_reference", result: "warn", effect: "exception", message: "Não foi possível ler a entidade e a referência" });
+  } else if (!targets.length) {
+    add({ code: "entity_reference", result: "fail", effect: "reject",
           message: `Entidade/referência diferentes: ${x.entity} / ${x.reference}`,
           details: { expected: payment } });
+  } else if (targets.includes(here)) {
+    add({ code: "entity_reference", result: "pass", effect: "none", message: "Entidade e referência corretas" });
   } else {
-    add({ code: "entity_reference", result: "warn", effect: "exception", message: "Não foi possível ler a entidade e a referência" });
+    add({ code: "entity_reference", result: "pass", effect: "none",
+          message: `Entidade e referência do pedido anterior #${targets[0].order_number} deste cliente` });
   }
 
   // Regra 2 — Valor
@@ -78,17 +91,20 @@ export function decide(input: DecisionInput): Decision {
           message: `Valor pago ${formatKz(x.amount)} inferior a ${formatKz(order.amount_due)}` });
   }
 
-  // Regra 3 — Data dentro da validade do pedido
+  // Regra 3 — Data dentro da validade do pedido (ou do pedido anterior que está a pagar)
   if (!x.paidAt) {
     add({ code: "paid_at_window", result: "warn", effect: "exception", message: "Não foi possível ler a data do pagamento" });
   } else {
-    const paid = new Date(x.paidAt).getTime();
-    if (paid < new Date(order.created_at).getTime() - CLOCK_MARGIN_MS) {
-      add({ code: "paid_at_window", result: "fail", effect: "reject", message: "Pagamento anterior à criação do pedido" });
-    } else if (paid > new Date(order.expires_at).getTime() + CLOCK_MARGIN_MS) {
-      add({ code: "paid_at_window", result: "fail", effect: "reject", message: "Pagamento feito depois do prazo do pedido" });
-    } else {
+    const w = paymentWindow(x.paidAt, targets.length ? targets : [here], input.uploadedAt ?? new Date().toISOString());
+    if ("problem" in w) {
+      // Uma data adiantada é quase sempre um relógio mal acertado: fica para análise, não recusa.
+      const effect = w.problem === "future" ? "exception" : "reject";
+      add({ code: "paid_at_window", result: "fail", effect, message: WINDOW_PROBLEMS[w.problem] });
+    } else if (w.order === here) {
       add({ code: "paid_at_window", result: "pass", effect: "none", message: "Pagamento dentro do prazo" });
+    } else {
+      add({ code: "paid_at_window", result: "pass", effect: "none",
+            message: `Pagamento feito no prazo do pedido anterior #${w.order.order_number} deste cliente` });
     }
   }
 

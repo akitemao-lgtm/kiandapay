@@ -44,3 +44,6 @@ next-env.d.ts
 
 # Configuração local do Claude Code
 /.claude/
+
+# ficheiros descarregados pelos scripts de validação
+/.cache/

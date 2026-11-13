@@ -7,6 +7,8 @@ export type Settings = {
   order_ttl_minutes: number;
   upload_grace_hours: number;
   unique_amount_enabled: boolean;
+  /** Aprovar ecrãs sem a data do pagamento, pela hora da captura. */
+  allow_screenshot_time: boolean;
   max_uploads_per_order: number;
   max_uploads_per_phone: number;
   phone_upload_window_hours: number;

@@ -52,7 +52,7 @@ const MONTHS: Record<string, number> = {
 };
 
 /** Hora local de Angola (UTC+1, sem horário de verão) → ISO. */
-function luanda(y: number, mo: number, d: number, h = 0, mi = 0, s = 0): string | null {
+export function luandaIso(y: number, mo: number, d: number, h = 0, mi = 0, s = 0): string | null {
   if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || s > 59) return null;
   const ms = Date.UTC(y, mo - 1, d, h - 1, mi, s);
   return Number.isNaN(ms) ? null : new Date(ms).toISOString();
@@ -62,17 +62,17 @@ const TIME = String.raw`(\d{1,2})[:hH](\d{2})(?::(\d{2}))?`;
 const DATE_PATTERNS: { re: RegExp; map: (m: RegExpMatchArray) => string | null }[] = [
   { // 16/10/2026 17:05[:30]  ou 16-10-2026 às 17:05
     re: new RegExp(String.raw`(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:\D{1,6}?${TIME})?`),
-    map: (m) => luanda(+m[3], +m[2], +m[1], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)),
+    map: (m) => luandaIso(+m[3], +m[2], +m[1], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)),
   },
   { // 2026-10-16 17:05
     re: new RegExp(String.raw`(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})(?:\D{1,6}?${TIME})?`),
-    map: (m) => luanda(+m[1], +m[2], +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)),
+    map: (m) => luandaIso(+m[1], +m[2], +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)),
   },
   { // 16 Out 2026 17:05 / 16 de Outubro de 2026
     re: new RegExp(String.raw`(\d{1,2})\s*(?:de\s+)?([A-Za-zç]{3})[a-zç]*\.?\s*(?:de\s+)?(\d{4})(?:\D{1,6}?${TIME})?`, "i"),
     map: (m) => {
       const mo = MONTHS[m[2].toLowerCase()];
-      return mo ? luanda(+m[3], mo, +m[1], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)) : null;
+      return mo ? luandaIso(+m[3], mo, +m[1], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)) : null;
     },
   },
 ];
