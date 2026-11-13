@@ -31,10 +31,12 @@ type PendingProof = {
   orders: ProofOrder & { status: string; customer_name: string; product_name: string; products: { is_active: boolean } | null };
 };
 
-const COLUMNS =
-  "id, order_id, storage_path, created_at, " +
-  "orders!payment_proofs_order_id_fkey(id, order_number, status, lead_id, owner_id, amount_due, payment_entity, payment_reference, " +
-  "created_at, expires_at, customer_name, product_name, products(is_active))";
+const ORDER_COLUMNS =
+  "id, order_number, status, lead_id, owner_id, amount_due, payment_entity, payment_reference, " +
+  "created_at, expires_at, customer_name, product_name";
+const COLUMNS = `id, order_id, storage_path, created_at, orders!payment_proofs_order_id_fkey(${ORDER_COLUMNS}, products(is_active))`;
+/** "!inner" é o que faz a condição do produto activo excluir a linha, em vez de a devolver sem produto. */
+const COLUMNS_ACTIVE = `id, order_id, storage_path, created_at, orders!payment_proofs_order_id_fkey!inner(${ORDER_COLUMNS}, products!inner(is_active))`;
 
 async function saveChecks(db: ServiceDb, proofId: string, checks: CheckOutcome[]) {
   await db.from("proof_checks").upsert(
@@ -163,27 +165,41 @@ export function scheduleImageReading(proofId: string) {
   }
 }
 
-/** Cron: imagens em Exceções ainda por ler (ex.: o servidor reiniciou a meio). */
+/**
+ * Cron: imagens em Exceções ainda por ler (ex.: o servidor reiniciou a meio, ou o
+ * plano é lento e a leitura não chegou ao fim).
+ *
+ * Procura um lote e só depois escolhe dentro dele: um comprovativo que não se possa
+ * ler — o produto foi desactivado, por exemplo — não pode ficar à frente da fila a
+ * tapar os seguintes. O produto activo é condição da própria consulta, e o lote é
+ * maior do que o número que se vai ler, para a filtragem nunca o deixar vazio.
+ */
 export async function readPendingImages(db: ServiceDb, limit = 1): Promise<number> {
-  // Os já lidos têm uma verificação "image_ocr"; os outros ainda não passaram por aqui.
+  const { data, error } = await db
+    .from("payment_proofs")
+    .select(COLUMNS_ACTIVE)
+    .eq("kind", "image")
+    .eq("decision", "exception")
+    .eq("orders.products.is_active", true)
+    .gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString())
+    .order("created_at", { ascending: true }) // os mais antigos primeiro: são os que ficaram para trás
+    .limit(Math.max(20, limit * 5));
+  if (error) {
+    console.error("[comprovativo] procurar imagens por ler", error);
+    return 0;
+  }
+  const candidatos = (data ?? []) as unknown as PendingProof[];
+  if (!candidatos.length) return 0;
+
+  // Os já lidos têm uma verificação "image_ocr". Pergunta-se só pelos candidatos,
+  // para a lista não crescer sem fim à medida que a plataforma for tendo mais pedidos.
   const { data: read } = await db
     .from("proof_checks")
     .select("proof_id")
     .eq("check_code", OCR_CHECK)
-    .limit(5000);
-  const lidos = (read ?? []).map((c: { proof_id: string }) => c.proof_id);
-  let query = db
-    .from("payment_proofs")
-    .select(COLUMNS)
-    .eq("kind", "image")
-    .eq("decision", "exception")
-    .gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString())
-    .order("created_at", { ascending: true }) // os mais antigos primeiro: são os que ficaram para trás
-    .limit(limit);
-  if (lidos.length) query = query.not("id", "in", `(${lidos.join(",")})`);
-  const { data } = await query;
-
-  const pending = ((data ?? []) as unknown as PendingProof[]).filter((p) => p.orders.products?.is_active);
+    .in("proof_id", candidatos.map((p) => p.id));
+  const lidos = new Set((read ?? []).map((c: { proof_id: string }) => c.proof_id));
+  const pending = candidatos.filter((p) => !lidos.has(p.id)).slice(0, limit);
   for (const proof of pending) {
     // Marca já que passou por aqui: se o OCR estourar o tempo, não volta a prender o cron.
     await saveChecks(db, proof.id, [{ code: OCR_CHECK, result: "warn", effect: "exception", message: "A ler o texto da imagem…" }]);
